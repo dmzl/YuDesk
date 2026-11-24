@@ -26,10 +26,10 @@ final class AboutPages {
         LicenseCatalog loaded;try{loaded=new LicenseCatalog(activity);}catch(Exception error){loaded=null;}catalog=loaded;
     }
     void show(){
-        LinearLayout content=activity.formPage("about",L10n.tr("关于 CrossDesk"),settings);
+        LinearLayout content=activity.formPage("about",L10n.tr("关于")+" YuDesk",settings);
         LinearLayout version=activity.section(content,"");value(version,L10n.tr("版本"),applicationVersion());
         updateRow=ui.row();updateRow.setPadding(ui.dp(16),0,ui.dp(16),0);updateRow.addView(activity.updateDot(),ui.size(8,8));
-        updateLink=ui.action("",BLUE,()->open("https://crossdesk.cn"));updateLink.setGravity(Gravity.START|Gravity.CENTER_VERTICAL);updateLink.setPadding(ui.dp(8),ui.dp(12),0,ui.dp(12));updateRow.addView(updateLink,new LinearLayout.LayoutParams(0,-2,1));version.addView(updateRow);
+        updateLink=ui.action("",BLUE,()->open("https://github.com/dmzl/YuDesk/releases"));updateLink.setGravity(Gravity.START|Gravity.CENTER_VERTICAL);updateLink.setPadding(ui.dp(8),ui.dp(12),0,ui.dp(12));updateRow.addView(updateLink,new LinearLayout.LayoutParams(0,-2,1));version.addView(updateRow);
         updateStatus=ui.text("",13,false);updateStatus.setPadding(ui.dp(16),ui.dp(8),ui.dp(16),ui.dp(8));version.addView(updateStatus);
         checkButton=ui.action(L10n.tr("检查更新"),BLUE,activity::checkAppUpdates);version.addView(checkButton);renderUpdates();ui.gap(content,28);
         if(catalog==null){unavailable(content);return;}
@@ -94,7 +94,7 @@ final class AboutPages {
     private void source(){
         LinearLayout content=activity.formPage("source",L10n.tr("源码与构建说明"),this::show);
         LinearLayout info=activity.section(content,L10n.tr("本版本源码与构建说明"));
-        if(catalog.source==null){paragraph(info,L10n.tr("本版本源码信息暂不可用。"),SECONDARY);ui.divider(info);external(info,L10n.tr("项目主页"),"https://github.com/kunkundi/crossdesk");return;}
+        if(catalog.source==null){paragraph(info,L10n.tr("本版本源码信息暂不可用。"),SECONDARY);ui.divider(info);external(info,L10n.tr("项目主页"),"https://github.com/dmzl/YuDesk");return;}
         String revision=catalog.source.optString("revision","");String tag=catalog.source.isNull("tag")?"":catalog.source.optString("tag","");
         value(info,L10n.tr("源码版本"),tag.isEmpty()?revision.substring(0,Math.min(12,revision.length())):tag);ui.divider(info);
         if(catalog.source.optBoolean("isModified")){paragraph(info,L10n.tr("开发版本包含尚未发布的修改，以下链接为基础版本源码。"),SECONDARY);ui.divider(info);}
@@ -102,7 +102,7 @@ final class AboutPages {
         try{
             List<LicenseCatalog.Document> documents=LicenseCatalog.documents(catalog.source.optJSONArray("buildDocuments"));
             if(!documents.isEmpty())actionLink(info,L10n.tr("构建说明"),()->document(L10n.tr("构建说明"),documents.get(0),this::source));
-            else external(info,L10n.tr("构建说明"),catalog.source.optString("buildInstructionsURL","https://github.com/kunkundi/crossdesk"));
+            else external(info,L10n.tr("构建说明"),catalog.source.optString("buildInstructionsURL","https://github.com/dmzl/YuDesk"));
         }catch(org.json.JSONException error){paragraph(info,L10n.tr("本版本源码信息暂不可用。"),SECONDARY);}
     }
     private void buildSources(LicenseCatalog.Component item,Runnable back){

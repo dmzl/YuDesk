@@ -22,7 +22,7 @@ def git(*args, cwd=ROOT):
 
 def write_pages(output, catalog, additional, revision, minirtc):
     """Small navigation catalog and separate, offline-selectable license documents."""
-    source = f'https://github.com/kunkundi/crossdesk/tree/{revision}'
+    source = f'https://github.com/dmzl/YuDesk/tree/{revision}'
     mini_source = f'https://github.com/kunkundi/minirtc/tree/{minirtc}'
     components = []
     for entry in catalog['components']:
@@ -87,7 +87,7 @@ def write_pages(output, catalog, additional, revision, minirtc):
         'schemaVersion': 1, 'revision': revision, 'tag': tag,
         'isModified': dirty,
         'sourceURL': source,
-        'buildInstructionsURL': f'https://github.com/kunkundi/crossdesk/blob/{quote(revision, safe="")}/apps/android/README.md',
+        'buildInstructionsURL': f'https://github.com/dmzl/YuDesk/blob/{quote(revision, safe="")}/apps/android/README.md',
         'buildDocuments': build_documents, 'miniRTCRevision': minirtc,
     }
     (output / 'SourceMetadata.json').write_text(json.dumps(metadata, ensure_ascii=False, indent=2)+'\n', encoding='utf-8')
@@ -107,7 +107,7 @@ def main():
         'You can rebuild/relink modified libraries and install an APK signed with your own key.\n',
         f'Application base revision: {revision}\nMiniRTC base revision: {minirtc}\n'
         'This development build may contain local changes in CrossDesk and the MiniRTC submodule.\n'
-        'Source: https://github.com/kunkundi/crossdesk\n'
+        'Source: https://github.com/dmzl/YuDesk\n'
         'Build: apps/android/README.md; native source: deps/submodules/minirtc\n',
         (ROOT / 'LICENSE').read_text(),
     ]

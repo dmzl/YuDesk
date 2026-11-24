@@ -29,6 +29,10 @@ final class RemoteVideoView extends FrameLayout implements SurfaceHolder.Callbac
     private final float pinchSlop;
     private final RemoteViewport viewport = new RemoteViewport();
     private final RemoteViewport pictureInPictureViewport = new RemoteViewport();
+    interface Tap { void send(float x, float y); }
+    Tap onTap;
+    private AlbumGesture album;
+    private TouchMode mode = TouchMode.ALBUM;
     private boolean pictureInPicture;
     private int frameWidth = 16, frameHeight = 9;
     private float x = .5f, y = .5f, scrollY;
@@ -37,7 +41,12 @@ final class RemoteVideoView extends FrameLayout implements SurfaceHolder.Callbac
     private float pinchSpan;
     private long touchRevision;
     private boolean suppressPointerGesture;
-    void setRelative(boolean value) { releaseMouse(); relative=value; }
+    void setMode(TouchMode value) {
+        releaseMouse();
+        mode = value;
+        relative = value == TouchMode.RELATIVE;
+        setContentDescription(value.label(getContext()));
+    }
     void setPictureInPicture(boolean value) {
         if(pictureInPicture==value)return;
         releaseMouse();pictureInPicture=value;cursor.setVisibility(value?GONE:VISIBLE);fit();
@@ -45,7 +54,7 @@ final class RemoteVideoView extends FrameLayout implements SurfaceHolder.Callbac
     Rect pictureInPictureBounds() {
         Rect bounds=new Rect();video.getGlobalVisibleRect(bounds);return bounds;
     }
-    void releaseMouse() { mouseInput.releaseAll(); dragging=false; suppressPointerGesture=true; }
+    void releaseMouse() { if (album != null) album.cancel(); mouseInput.releaseAll(); dragging=false; suppressPointerGesture=true; }
     private boolean suppressPointerGesture() {
         return suppressPointerGesture || mouseInput.hasVirtualButton() || touchRevision != mouseInput.revision();
     }
@@ -53,6 +62,15 @@ final class RemoteVideoView extends FrameLayout implements SurfaceHolder.Callbac
         super(context); this.session = session;
         mouseInput = new RemoteMouseInput(this::sendMouse);
         mouseInput.relativeMotion = this::moveRelative;
+        album = new AlbumGesture(viewport, new AlbumGesture.Output() {
+            public void tap(float px, float py) {
+                if (onTap != null) onTap.send(px, py);
+            }
+            public void scroll(float px, float py, int direction) {
+                mouseInput.move(px, py);
+                mouseInput.scroll(direction);
+            }
+        }, ViewConfiguration.get(context).getScaledTouchSlop(), 16 * getResources().getDisplayMetrics().density);
         setBackgroundColor(Color.BLACK);
         video = new SurfaceView(context); video.getHolder().addCallback(this);
         addView(video, new LayoutParams(1, 1, android.view.Gravity.CENTER));
@@ -62,7 +80,11 @@ final class RemoteVideoView extends FrameLayout implements SurfaceHolder.Callbac
         gestures = new GestureDetector(context, new GestureDetector.SimpleOnGestureListener() {
             @Override public boolean onDown(MotionEvent e) { return point(e); }
             @Override public boolean onSingleTapUp(MotionEvent e) {
-                if (!twoFinger && !suppressPointerGesture() && point(e)) cursor.performClick(); return true;
+                if (!twoFinger && !suppressPointerGesture() && point(e)) {
+                    if (onTap != null && e.getToolType(0) == MotionEvent.TOOL_TYPE_FINGER) onTap.send(x, y);
+                    else cursor.performClick();
+                }
+                return true;
             }
             @Override public void onLongPress(MotionEvent e) { if (!twoFinger && !dragging && !suppressPointerGesture() && point(e)) click(3, 4); }
             @Override public boolean onScroll(MotionEvent first, MotionEvent current, float dx, float dy) {
@@ -92,6 +114,12 @@ final class RemoteVideoView extends FrameLayout implements SurfaceHolder.Callbac
         if (width <= 0 || height <= 0) return;
         frameWidth = width; frameHeight = height; fit();
     }
+    void tapAt(float px, float py, int id, int display) {
+        mouseInput.move(px, py);
+        if (remoteFocusChanged != null) remoteFocusChanged.run();
+        session.tap(px, py, id, display);
+    }
+
     void resetViewport() { releaseMouse(); viewport.reset(); applyViewport(); }
     void setKeyboardInset(int inset) {
         if (viewport.setKeyboardInset(inset)) applyViewport();
@@ -171,7 +199,33 @@ final class RemoteVideoView extends FrameLayout implements SurfaceHolder.Callbac
         return true;
     }
     private void click(int down, int up) { mouseInput.click(down,up); }
+    private boolean touchAlbum(MotionEvent e) {
+        int action = e.getActionMasked();
+        if (action == MotionEvent.ACTION_DOWN) {
+            touchRevision = mouseInput.revision();
+            suppressPointerGesture = mouseInput.hasVirtualButton();
+            twoFinger = false;
+            album.down(e.getX(), e.getY());
+        } else if (suppressPointerGesture() || pictureInPicture || e.getPointerCount() > 2) {
+            suppressPointerGesture = true;
+            album.cancel();
+        } else if (action == MotionEvent.ACTION_POINTER_DOWN || (action == MotionEvent.ACTION_MOVE && e.getPointerCount() == 2)) {
+            float cx = (e.getX(0) + e.getX(1)) / 2f;
+            float cy = (e.getY(0) + e.getY(1)) / 2f;
+            float span = (float)Math.hypot(e.getX(0) - e.getX(1), e.getY(0) - e.getY(1));
+            if (action == MotionEvent.ACTION_POINTER_DOWN) {
+                twoFinger = true;
+                album.second(cx, cy, span);
+            } else album.pair(cx, cy, span);
+        } else if (action == MotionEvent.ACTION_MOVE && !twoFinger) album.move(e.getX(), e.getY());
+        else if (action == MotionEvent.ACTION_UP && !twoFinger) album.up(e.getX(), e.getY());
+        else album.cancel();
+        applyViewport();
+        return true;
+    }
+
     private boolean touch(MotionEvent e) {
+        if (mode == TouchMode.ALBUM && e.getToolType(0) == MotionEvent.TOOL_TYPE_FINGER) return touchAlbum(e);
         int action = e.getActionMasked();
         if (action == MotionEvent.ACTION_DOWN) {
             twoFinger = pinching = viewportPanActive = false;

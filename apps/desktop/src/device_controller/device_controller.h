@@ -9,6 +9,7 @@
 
 #include <cstdint>
 #include <vector>
+#include <optional>
 
 #include <remote_action.h>
 
@@ -24,9 +25,18 @@ class DeviceController {
   virtual ~DeviceController() = default;
 };
 
+struct AppliedMousePoint {
+  DisplayInfo screen;
+  double x, y;
+};
+
 class MouseController : public DeviceController {
  public:
   ~MouseController() override = default;
+#ifdef __APPLE__
+  // Written and consumed within SessionDeviceManager's serialized injection.
+  std::optional<AppliedMousePoint> applied_tap;
+#endif
 
   virtual int Init(std::vector<DisplayInfo> display_info_list) = 0;
   virtual int Destroy() = 0;

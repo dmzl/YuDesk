@@ -240,6 +240,8 @@ int PlatformMouseController::SendMouseCommand(RemoteAction remote_action,
     CGEventSetIntegerValueField(mouse_event, kCGEventSourceUserData,
                                 kCrossDeskInjectedEvent);
     CGEventPost(kCGHIDEventTap, mouse_event);
+    if (remote_action.ime_tap && !remote_action.ime_source.expired())
+      applied_tap = AppliedMousePoint{display_info, mouse_point.x, mouse_point.y};
     CFRelease(mouse_event);
     const int flag = static_cast<int>(remote_action.m.flag);
     if (flag >= 1 && flag <= 6) {

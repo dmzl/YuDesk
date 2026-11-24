@@ -9,7 +9,7 @@ fi
 APP_BUNDLE="$1"
 EXPECTED_ARCH="$2"
 EXPECTED_SDK_VERSION="${3:-}"
-APP_EXECUTABLE="$APP_BUNDLE/Contents/MacOS/CrossDesk"
+APP_EXECUTABLE="$APP_BUNDLE/Contents/MacOS/YuDesk"
 FRAMEWORKS_DIR="$APP_BUNDLE/Contents/Frameworks"
 INFO_PLIST="$APP_BUNDLE/Contents/Info.plist"
 

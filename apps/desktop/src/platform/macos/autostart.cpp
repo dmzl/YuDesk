@@ -14,7 +14,7 @@ std::filesystem::path AutostartPath(const std::string& app_name) {
   const char* home = std::getenv("HOME");
   if (!home || !home[0]) return {};
   return std::filesystem::path(home) / "Library" / "LaunchAgents" /
-         (app_name + ".plist");
+         ((app_name == "CrossDesk" ? "YuDesk" : app_name) + ".plist");
 }
 
 }  // namespace
@@ -45,7 +45,7 @@ bool EnableAutostart(const std::string& app_name,
 <dict>
     <key>Label</key>
     <string>)"
-       << app_name << R"(</string>
+       << (app_name == "CrossDesk" ? "YuDesk" : app_name) << R"(</string>
     <key>ProgramArguments</key>
     <array>
         <string>)"

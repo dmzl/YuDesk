@@ -713,6 +713,9 @@ void SessionDeviceManager::UpdateInteractions() {
   // Restore the previous session's modes and apply the new controller's saved
   // selections before starting capture or allowing an early input return.
   owner_.HandleDisplayResolutionChanges();
+#ifdef __APPLE__
+  owner_.TickEditableTap();
+#endif
 #ifdef _WIN32
   if (owner_.screen_capturer_is_started_ &&
       cursor_capture_dirty_.load(std::memory_order_relaxed)) {
@@ -852,10 +855,16 @@ bool SessionDeviceManager::SendKeyboardCommand(int key_code, bool is_down,
 }
 
 bool SessionDeviceManager::SendMouseCommand(const RemoteAction &action,
-                                            int selected_display) {
+                                            int selected_display,
+                                            std::optional<AppliedMousePoint>* point) {
   std::lock_guard lock(mouse_controller_mutex_);
   if (mouse_controller_) {
-    return mouse_controller_->SendMouseCommand(action, selected_display) == 0;
+    const bool sent = mouse_controller_->SendMouseCommand(action, selected_display) == 0;
+#ifdef __APPLE__
+    if (sent && point) *point = std::move(mouse_controller_->applied_tap);
+    mouse_controller_->applied_tap.reset();
+#endif
+    return sent;
   }
   return false;
 }

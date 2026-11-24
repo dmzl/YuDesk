@@ -69,9 +69,16 @@ final class RemoteVersionCheck {
         private volatile boolean cancelled;
         private HttpsURLConnection connection;
 
-        private ReleaseRequest(Consumer<byte[]> completion) { this.completion = completion; }
+        private final String url;
+        private ReleaseRequest(String url, Consumer<byte[]> completion) {
+            this.url = url;
+            this.completion = completion;
+        }
         static Cancellation start(Consumer<byte[]> completion) {
-            ReleaseRequest request = new ReleaseRequest(completion);
+            return start(RELEASE_URL, completion);
+        }
+        static Cancellation start(String url, Consumer<byte[]> completion) {
+            ReleaseRequest request = new ReleaseRequest(url, completion);
             request.main.postDelayed(request.timeout, 15000);
             Thread worker = new Thread(request, "CrossDesk version check");
             worker.setDaemon(true);
@@ -84,7 +91,7 @@ final class RemoteVersionCheck {
             HttpsURLConnection opened = null;
             try {
                 // Fetch public metadata only: no peer identity, version or credentials.
-                opened = (HttpsURLConnection)new URL(RELEASE_URL).openConnection();
+                opened = (HttpsURLConnection)new URL(url).openConnection();
                 synchronized (this) {
                     if (cancelled) return;
                     connection = opened;

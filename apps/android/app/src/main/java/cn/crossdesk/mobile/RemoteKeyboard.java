@@ -87,7 +87,7 @@ final class RemoteKeyboard extends LinearLayout {
         post(()->{if(opened&&!computer)changeIme(true,false,false);});
     }
     boolean close(){
-        shortcutPanel.close();if(!opened)return false;opened=false;measuring=switching=false;cancelTransition();modifiers.clear();editor.stop();
+        shortcutPanel.close();if(!opened)return false;opened=false;actions.keyboardClosed();measuring=switching=false;cancelTransition();modifiers.clear();editor.stop();
         getContext().getSystemService(InputMethodManager.class).hideSoftInputFromWindow(getWindowToken(),0);
         setVisibility(GONE);changed.run();return true;
     }

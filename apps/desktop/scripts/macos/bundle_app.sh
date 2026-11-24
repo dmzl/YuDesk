@@ -9,7 +9,7 @@ fi
 APP_BUNDLE="$1"
 EXPECTED_ARCH="$2"
 SLINT_LIBRARY="$3"
-APP_EXECUTABLE="$APP_BUNDLE/Contents/MacOS/CrossDesk"
+APP_EXECUTABLE="$APP_BUNDLE/Contents/MacOS/YuDesk"
 FRAMEWORKS_DIR="$APP_BUNDLE/Contents/Frameworks"
 
 for command_name in codesign install_name_tool lipo otool strip; do

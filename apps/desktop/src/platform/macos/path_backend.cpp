@@ -20,6 +20,10 @@ std::filesystem::path EnvOrDefault(const char* name,
   return path.is_absolute() ? path : fallback;
 }
 
+std::string DataName(const std::string& name) {
+  return name == "CrossDesk" ? "YuDesk" : name;
+}
+
 }  // namespace
 
 std::filesystem::path GetExecutableDirectory() {
@@ -35,15 +39,15 @@ std::filesystem::path GetExecutableDirectory() {
 }
 
 std::filesystem::path GetConfigPath(const std::string& app_name) {
-  return EnvOrDefault("XDG_CONFIG_HOME", Home() / ".config") / app_name;
+  return EnvOrDefault("XDG_CONFIG_HOME", Home() / ".config") / DataName(app_name);
 }
 
 std::filesystem::path GetCachePath(const std::string& app_name) {
-  return EnvOrDefault("XDG_CACHE_HOME", Home() / ".cache") / app_name;
+  return EnvOrDefault("XDG_CACHE_HOME", Home() / ".cache") / DataName(app_name);
 }
 
 std::filesystem::path GetLogPath(const std::string& app_name) {
-  return Home() / "Library" / "Logs" / app_name;
+  return Home() / "Library" / "Logs" / DataName(app_name);
 }
 
 }  // namespace crossdesk::platform

@@ -30,9 +30,8 @@ fs::path ExecutablePath() {
   if (_NSGetExecutablePath(buffer.data(), &size)) throw std::runtime_error("Cannot locate executable");
   return fs::canonical(buffer.data());
 }
-bool SupportedInstallation(const fs::path& application) {
-  return application == fs::path("/Applications/CrossDesk.app/Contents/MacOS/CrossDesk") &&
-         fs::is_regular_file(HelperPath(application));
+bool SupportedInstallation(const fs::path&) {
+  return false;  // The upstream installer targets the official bundle.
 }
 int RunElevated(const fs::path& executable, const fs::path& job) {
   const auto command = ShellQuote(executable.string()) + " --install " + ShellQuote(job.string());

@@ -41,6 +41,9 @@ GuiRuntime::GuiRuntime()
 #ifdef _WIN32
             ScopedUserDesktopInputThread input_thread;
 #endif
+#ifdef __APPLE__
+            { std::lock_guard lock(tap_mutex_); ++tap_epoch_; }
+#endif
             const bool keys_released =
                 keyboard_.ReleaseRemotePressedKeys(id, "input_queue_reset");
             const bool mouse_released = devices_.ReleaseRemoteMouseButtons(id);

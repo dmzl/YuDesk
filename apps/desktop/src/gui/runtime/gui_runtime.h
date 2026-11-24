@@ -13,6 +13,7 @@
 #include <deque>
 #include <future>
 #include <memory>
+#include <optional>
 #include <string>
 
 #include "desktop_automation.h"
@@ -76,7 +77,7 @@ class GuiRuntime : protected gui_detail::GuiState {
   int WithController(
       const std::string& id,
       const std::function<int(MiniRtcPeerPtr*, const std::string&)>& operation,
-      bool require_trusted = true);
+      bool require_trusted = true, PeerEventHandler* expected_source = nullptr);
   int SendControllerData(const std::string& id, const char* data, size_t size,
                          const char* label);
   std::shared_ptr<PeerEventHandler> ControllerEvents(const std::string& id);
@@ -206,6 +207,24 @@ class GuiRuntime : protected gui_detail::GuiState {
 #endif
 
 #ifdef __APPLE__
+  struct EditableTap {
+    std::string peer;
+    std::weak_ptr<void> source;
+    uint64_t revision, epoch;
+    int id, display;
+    DisplayInfo screen;
+    double x, y;
+    std::chrono::steady_clock::time_point received, released{};
+  };
+  std::atomic<uint64_t> tap_epoch_{0};
+  uint64_t tap_revision_ = 0;
+  std::mutex tap_mutex_;
+  std::optional<EditableTap> pending_tap_;
+  std::optional<EditableTap> probing_tap_;  // UI thread only.
+  std::future<bool> editable_probe_;
+  void RecordAppliedTap(const std::string& peer, const RemoteAction& action,
+                        const AppliedMousePoint* point, InputOutcome outcome);
+  void TickEditableTap();
   void StartMacPermissionMigration(bool retry);
   std::future<MacPermissionMigrationResult> mac_permission_migration_task_;
   bool mac_permission_migration_failed_ = false;

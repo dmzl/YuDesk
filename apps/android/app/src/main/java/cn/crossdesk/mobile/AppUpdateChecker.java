@@ -16,8 +16,9 @@ final class AppUpdateChecker {
     String availableVersion = "";
 
     AppUpdateChecker(String currentVersion, Runnable changed) {
-        this(currentVersion, RemoteVersionCheck.ReleaseRequest::start,
-                NativeSession::nCheckMobileUpdate, changed);
+        this(currentVersion, callback -> RemoteVersionCheck.ReleaseRequest.start(
+                "https://api.github.com/repos/dmzl/YuDesk/releases?per_page=1", callback),
+                AppUpdateChecker::compareForkRelease, changed);
     }
 
     AppUpdateChecker(String currentVersion, RemoteVersionCheck.Fetcher fetcher,
@@ -25,6 +26,23 @@ final class AppUpdateChecker {
         this.currentVersion = currentVersion; this.fetcher = fetcher;
         this.compare = compare;
         this.changed = changed;
+    }
+
+    private static String compareForkRelease(String current, byte[] data) {
+        try {
+            var releases = new org.json.JSONArray(new String(data, java.nio.charset.StandardCharsets.UTF_8));
+            if (releases.length() == 0) return "";
+            var release = releases.getJSONObject(0);
+            if (release.optBoolean("prerelease") || release.optBoolean("draft")) return "";
+            String tag = release.getString("tag_name");
+            var version = new org.json.JSONObject().put("version", tag);
+            var downloads = new org.json.JSONObject().put("android-arm64", version);
+            var manifest = new org.json.JSONObject().put("downloads", downloads);
+            return NativeSession.nCheckMobileUpdate(current,
+                    manifest.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        } catch (org.json.JSONException invalid) {
+            return null;
+        }
     }
 
     boolean updateAvailable() { return !availableVersion.isEmpty(); }

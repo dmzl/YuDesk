@@ -1269,7 +1269,7 @@ int GuiApplication::Run() {
 #endif
   InitializeTrustedDevices(path_manager_->GetConfigPath() / "trusted-devices");
 #ifdef __APPLE__
-  StartMacPermissionMigration(false);
+  // YuDesk requests its own system permissions under its independent bundle ID.
 #endif
 
   LOG_INFO("CrossDesk version: {} (Slint UI)", CROSSDESK_VERSION);
@@ -1327,6 +1327,9 @@ int GuiApplication::Run() {
 #endif
   InitializeModules();
   update_checker_ = std::make_unique<UpdateChecker>(CROSSDESK_VERSION);
+#ifdef __APPLE__
+  update_checker_->Stop();  // YuDesk packages are distributed by the fork.
+#endif
 #if CROSSDESK_HAS_UPDATER
   updater_ = std::make_unique<updater::Controller>(path_manager_->GetCachePath());
 #endif
@@ -2193,7 +2196,11 @@ void GuiApplication::BindMainCallbacks(bool gallery_window) {
     }
   });
   main->on_check_for_updates([this] {
+#ifdef __APPLE__
+    OpenUrl("https://github.com/dmzl/YuDesk/releases");
+#else
     update_checker_->RequestCheck();
+#endif
     SyncMainWindow();
   });
   main->on_connection_cancel([this] {
@@ -2249,7 +2256,7 @@ void GuiApplication::BindMainCallbacks(bool gallery_window) {
   });
   main->on_retry_permission_migration([this] {
 #ifdef __APPLE__
-    StartMacPermissionMigration(true);
+    RefreshMacPermissionStatus(true);
 #endif
   });
   main->on_request_screen_recording_permission([this] {

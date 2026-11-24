@@ -7,6 +7,10 @@
 #ifndef _REMOTE_ACTION_H_
 #define _REMOTE_ACTION_H_
 
+#ifdef __APPLE__
+#include <chrono>
+#include <memory>
+#endif
 #include <cstddef>
 #include <cstdint>
 #include <string>
@@ -219,6 +223,16 @@ struct RemoteAction {
     VideoSettings vs;
     VideoCodecStatus vcs;
   };
+
+  // Optional metadata on a standard left-button pair. Older peers ignore these fields.
+  int ime_tap = 0;
+  int ime_display = -1;
+#ifdef __APPLE__
+  // Local queue provenance. Never serialized.
+  std::weak_ptr<void> ime_source;
+  std::chrono::steady_clock::time_point ime_received{};
+  uint64_t ime_epoch = 0;
+#endif
 
   // Committed UTF-8 text. Kept outside the POD union for automatic ownership.
   std::string text;

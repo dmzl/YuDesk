@@ -19,6 +19,7 @@ import javax.net.ssl.TrustManagerFactory;
 import javax.net.ssl.X509TrustManager;
 
 final class NativeSession implements AutoCloseable {
+    final TapFeedback imeFeedback = new TapFeedback();
     static final int MAX_CLIPBOARD_BYTES = 128 * 1024;
     static { System.loadLibrary("crossdesk_android"); }
     interface Listener {
@@ -297,7 +298,14 @@ final class NativeSession implements AutoCloseable {
         });
     }
     void surface(Surface value) { execute(() -> { surface = value; if (handle != 0) nSurface(handle, value); }); }
-    void pointer(float x, float y, int flag, int wheel) { execute(() -> { if (connected) nPointer(handle, x, y, flag, wheel); }); }
+    void pointer(float x, float y, int flag, int wheel) { execute(() -> { if (connected) nPointer(handle, x, y, flag, wheel, 0, -1); }); }
+    void tap(float x, float y, int request, int display) {
+        execute(() -> {
+            if (!connected) return;
+            nPointer(handle, x, y, 1, 0, request, display);
+            nPointer(handle, x, y, 2, 0, request, display);
+        });
+    }
     void key(int code, boolean down) { execute(() -> { if (connected) nKey(handle, code, down); }); }
     void chord(int code,int[] modifiers) {
         if(closed||!connected)return;
@@ -390,7 +398,7 @@ final class NativeSession implements AutoCloseable {
     static native String directEndpoint(String input);
     private static native boolean nConnect(long handle, String identity, String remote, String password);
     private static native void nReady(long handle,byte[] displayResolutions);
-    private static native void nPointer(long handle, float x, float y, int flag, int wheel);
+    private static native void nPointer(long handle, float x, float y, int flag, int wheel, int request, int display);
     private static native void nKey(long handle, int code, boolean down);
     private static native void nText(long handle,byte[] text);
     private static native void nControl(long handle, int type, int value);

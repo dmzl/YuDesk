@@ -200,6 +200,12 @@ void Data(const char* data, size_t size, const char*, size_t,
       ctx->owner->Send(kControlStream, *proof);
       return;
     }
+    if (size < 256 && std::string_view(data, size).find("yudesk_ime") != std::string_view::npos) {
+      const auto reply = json::parse(data, data + size, nullptr, false);
+      if (reply.is_object() && reply.value("type", json{}) == "yudesk_ime" &&
+          reply.contains("editable") && reply["editable"].is_boolean()) ctx->owner->Event(4, data, size);
+      return;
+    }
     RemoteAction action{};
     if (action.from_json(std::string(data, size))) {
       const auto message = action.to_json();
@@ -423,10 +429,14 @@ extern "C" JNIEXPORT void JNICALL JNI_METHOD(nReady)(JNIEnv* env, jclass, jlong 
   FreeRemoteAction(action);
 }
 extern "C" JNIEXPORT void JNICALL JNI_METHOD(nPointer)(
-    JNIEnv*, jclass, jlong handle, jfloat x, jfloat y, jint flag, jint wheel) {
+    JNIEnv*, jclass, jlong handle, jfloat x, jfloat y, jint flag, jint wheel, jint request, jint display) {
   auto* s = From(handle); if (!s || flag < 0 || flag > 8) return;
   RemoteAction action{}; action.type = mouse;
   action.m = {std::clamp(x, 0.f, 1.f), std::clamp(y, 0.f, 1.f), wheel, static_cast<MouseFlag>(flag)};
+  if ((flag == 1 || flag == 2) && request > 0 && display >= 0 && display < 32) {
+    action.ime_tap = request;
+    action.ime_display = display;
+  }
   s->pointer_x = action.m.x; s->pointer_y = action.m.y;
   if (flag >= 1 && flag <= 6) {
     const unsigned bit = 1u << ((flag - 1) / 2);

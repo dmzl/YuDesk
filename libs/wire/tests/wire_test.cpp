@@ -45,6 +45,27 @@ int main() {
                    sizeof(crossdesk::FileTransferAck) == 28,
                "file transfer wire structure size changed");
 
+  crossdesk::RemoteAction tap{};
+  tap.type = crossdesk::ControlType::mouse;
+  tap.m = {0.25f, 0.75f, 0, crossdesk::MouseFlag::left_down};
+  const auto legacy_click = tap.to_json();
+  tap.ime_tap = 37;
+  tap.ime_display = 1;
+  crossdesk::RemoteAction parsed{};
+  ok &= Expect(parsed.from_json(tap.to_json()) && parsed.ime_tap == 37 &&
+               parsed.ime_display == 1 && parsed.m.x == 0.25f, "tap metadata round trip");
+  ok &= Expect(parsed.from_json(legacy_click) && !parsed.ime_tap && parsed.ime_display == -1,
+               "legacy click must clear previous tap metadata");
+  for (const auto* value : {"0", "-1", "1.5", "true", "4294967297", "18446744073709551615"}) {
+    auto malformed = legacy_click;
+    malformed.insert(1, std::string("\"ime_tap\":") + value + ",\"ime_display\":1,");
+    ok &= Expect(parsed.from_json(malformed) && !parsed.ime_tap &&
+                 parsed.m.flag == crossdesk::MouseFlag::left_down,
+                 "invalid tap extension must preserve the ordinary click");
+  }
+  tap.m.flag = crossdesk::MouseFlag::move;
+  ok &= Expect(tap.to_json().find("ime_tap") == std::string::npos, "moves have no tap metadata");
+
   crossdesk::RemoteAction unset_action{};
   ok &= Expect(unset_action.type == crossdesk::ControlType::invalid,
                "default RemoteAction should be invalid");

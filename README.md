@@ -1,3 +1,13 @@
+# YuDesk
+
+YuDesk 基于 [CrossDesk](https://github.com/kunkundi/crossdesk)。Android 端提供相册触控模式，双指缩放、单指平移，轻点操作远端，双指同向上下滑动滚动落点处的内容。配对的 YuDesk macOS 宿主可识别点中的可编辑控件并提示手机打开系统键盘；也可用工具栏手动打开。
+
+在 Mac 上用 Snug 准备一块扩展显示器，例如 1920 × 1080。确保显示器处于扩展模式，将目标窗口移过去，然后在手机会话里选择该显示器。窗口会离开实体屏幕，Mac 的键鼠焦点仍由本地和远端共用。同一局域网内可使用 Mac 显示的直连地址与端口。该连接方式无需自建云服务器。
+
+[手机交互验收规格](docs/features/mobile-touch/IMPLEMENTATION_SPEC.md) · [Android 构建](apps/android/README.md) · [上游软件许可证](LICENSE)
+
+## CrossDesk 上游说明
+
 <div align="center">
   <img src="docs/images/crossdesk-banner.svg" width="420" alt="CrossDesk logo with the icon on the left and a two-tone wordmark on the right" />
   <p>A lightweight, cross-platform remote desktop for computers, browsers, mobile devices, and terminals, with DeskHub for viewing and controlling multiple desktops.</p>

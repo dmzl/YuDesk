@@ -3,13 +3,13 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../../.." && pwd)"
-APP_NAME="crossdesk"
-APP_NAME_UPPER="CrossDesk"
+APP_NAME="yudesk"
+APP_NAME_UPPER="YuDesk"
 EXECUTABLE_PATH="${PROJECT_ROOT}/build/macosx/x86_64/release/crossdesk"
 PLATFORM="macos"
 ARCH="x64"
 BINARY_ARCH="x86_64"
-IDENTIFIER="cn.crossdesk.app"
+IDENTIFIER="io.github.dmzl.yudesk.mac"
 ICON_PATH="${PROJECT_ROOT}/apps/desktop/resources/macos/crossdesk.icns"
 MACOS_MIN_VERSION="14.0"
 
@@ -70,7 +70,7 @@ DMG_NAME="${APP_NAME}-${PLATFORM}-${ARCH}-${APP_VERSION}.dmg"
 VOL_NAME="Install ${APP_NAME_UPPER}"
 
 echo "delete old files"
-rm -rf "${APP_BUNDLE}" "${PKG_NAME}" "${DMG_NAME}" build_pkg_temp build_pkg_scripts CrossDesk_dmg_temp
+rm -rf "${APP_BUNDLE}" "${PKG_NAME}" "${DMG_NAME}" build_pkg_temp build_pkg_scripts YuDesk_dmg_temp
 
 mkdir -p build_pkg_temp
 mkdir -p "${MACOS_DIR}" "${RESOURCES_DIR}"
@@ -132,14 +132,6 @@ find "${APP_BUNDLE}" -name '._*' -delete
 
 echo ".app created successfully."
 
-PKG_SCRIPT_ARGS=()
-if [[ "${CROSSDESK_MACOS_SIGN_IDENTITY:--}" != "-" ]]; then
-    mkdir -p build_pkg_scripts
-    cp "${SCRIPT_DIR}/tcc_migration_preinstall.sh" build_pkg_scripts/preinstall
-    chmod +x build_pkg_scripts/preinstall
-    PKG_SCRIPT_ARGS=(--scripts build_pkg_scripts)
-fi
-
 mkdir -p build_pkg_resources
 cat > build_pkg_resources/welcome.html <<EOF
 <!doctype html>
@@ -167,10 +159,10 @@ cat > build_pkg_resources/welcome.html <<EOF
 </head>
 <body>
     <h1>欢迎安装 ${INSTALLER_TITLE}</h1>
-    <p>CrossDesk 需要 macOS ${MACOS_MIN_VERSION} 或更高版本，将安装到“应用程序”文件夹。</p>
-    <p>首次启动时，CrossDesk 会引导你在系统设置中授予必要权限，包括辅助功能、录屏与系统录音等。</p>
+    <p>YuDesk 需要 macOS ${MACOS_MIN_VERSION} 或更高版本，将安装到“应用程序”文件夹。</p>
+    <p>首次启动时，YuDesk 会引导你在系统设置中授予必要权限，包括辅助功能、录屏与系统录音等。</p>
     <p>正式签名版本正常升级时会保留已有权限。从未签名或 ad-hoc 旧版升级后，请退出旧版并启动新版。新版会迁移当前用户的录屏与辅助功能授权，并引导你重新授权。遇到异常可在“设置 → 系统权限”中重试或稍后处理。</p>
-    <p>安装完成后，请从“应用程序”文件夹启动 CrossDesk。</p>
+    <p>安装完成后，请从“应用程序”文件夹启动 YuDesk。</p>
 </body>
 </html>
 EOF
@@ -181,7 +173,6 @@ pkgbuild \
   --version "${APP_VERSION}" \
   --install-location "/Applications" \
   --component "${APP_BUNDLE}" \
-  ${PKG_SCRIPT_ARGS[@]+"${PKG_SCRIPT_ARGS[@]}"} \
   build_pkg_temp/${APP_NAME}-component.pkg
 
 cat > build_pkg_temp/Distribution <<EOF

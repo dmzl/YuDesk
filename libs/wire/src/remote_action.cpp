@@ -223,6 +223,11 @@ std::string RemoteAction::ToJson(const RemoteAction& action) {
                          {"y", action.m.y},
                          {"s", action.m.s},
                          {"flag", action.m.flag}};
+      if ((action.m.flag == MouseFlag::left_down || action.m.flag == MouseFlag::left_up) &&
+          action.ime_tap > 0 && action.ime_display >= 0 && action.ime_display < 32) {
+        object["ime_tap"] = action.ime_tap;
+        object["ime_display"] = action.ime_display;
+      }
       break;
     case ControlType::text_input:
       if (action.text.empty() || action.text.size() > kMaxTextInputBytes ||
@@ -366,6 +371,13 @@ bool RemoteAction::FromJson(const std::string& json_string,
                             RemoteAction& output) {
   bool owns_host_info = false;
   try {
+    output.ime_tap = 0;
+    output.ime_display = -1;
+#ifdef __APPLE__
+    output.ime_source.reset();
+    output.ime_received = {};
+    output.ime_epoch = 0;
+#endif
     const json object = json::parse(json_string);
     output.display_resolutions.clear();
     output.preferred_display_resolutions.clear();
@@ -394,6 +406,15 @@ bool RemoteAction::FromJson(const std::string& json_string,
         output.m.s = object.at("mouse").at("s").get<int>();
         output.m.flag = static_cast<MouseFlag>(
             object.at("mouse").at("flag").get<int>());
+        if ((output.m.flag == MouseFlag::left_down || output.m.flag == MouseFlag::left_up) &&
+            object.contains("ime_tap") && object.contains("ime_display")) {
+          int64_t id = 0, display = 0;
+          if (ReadInteger(object, "ime_tap", 1, INT32_MAX, id) &&
+              ReadInteger(object, "ime_display", 0, 31, display)) {
+            output.ime_tap = static_cast<int>(id);
+            output.ime_display = static_cast<int>(display);
+          }
+        }
         break;
       case ControlType::text_input:
         output.text = object.at("text").get<std::string>();

@@ -186,7 +186,7 @@ std::shared_ptr<PeerEventHandler> GuiRuntime::ControllerEvents(
 int GuiRuntime::WithController(
     const std::string& id,
     const std::function<int(MiniRtcPeerPtr*, const std::string&)>& operation,
-    bool require_trusted) {
+    bool require_trusted, PeerEventHandler* expected_source) {
   if (require_trusted && !TrustedControllerAllowed(id)) return -1;
   std::shared_lock lock(remote_sessions_mutex_);
   auto it = lan_controllers_.find(id);
@@ -194,7 +194,7 @@ int GuiRuntime::WithController(
   if (it == lan_controllers_.end() && id.rfind("lan/", 0) == 0) return -1;
   MiniRtcPeerPtr* peer =
       it == lan_controllers_.end() ? peer_ : it->second.session->peer;
-  if (!peer || !events || !events->DataAllowed()) return -1;
+  if (!peer || !events || (expected_source && events.get() != expected_source) || !events->DataAllowed()) return -1;
   auto callback = events->EnterCallback();
   if (!callback) return -1;
   const auto wire_id = events->WireId(id);

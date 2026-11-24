@@ -63,6 +63,16 @@ final class RemoteViewport {
         constrainOffset();
     }
 
+    void panAlbum(float dx, float dy) {
+        if (!isZoomed()) return;
+        float halfX = Math.max(0, (width() - containerWidth) / 2f);
+        int visibleHeight = Math.max(1, containerHeight - keyboardInset);
+        float halfY = Math.max(0, (height() - visibleHeight) / 2f);
+        float center = -keyboardInset / 2f;
+        offsetX = clamp(offsetX + dx, -halfX, halfX);
+        offsetY = clamp(offsetY + dy, center - halfY, center + halfY);
+    }
+
     boolean setKeyboardInset(int inset) {
         if (keyboardInset == inset) return false;
         keyboardInset = inset;

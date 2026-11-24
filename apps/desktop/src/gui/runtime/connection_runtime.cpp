@@ -195,6 +195,9 @@ void GuiRuntime::HandlePresenceProbeTimeout() {
 
 void GuiRuntime::HandleServerControllerDisconnected(
     const std::string& remote_id, const char* reason) {
+#ifdef __APPLE__
+  { std::lock_guard lock(tap_mutex_); ++tap_epoch_; }
+#endif
   if (auto events = ControllerEvents(remote_id))
     transfers_.Cancel(events.get(), remote_id);
   {

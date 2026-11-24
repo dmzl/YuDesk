@@ -13,6 +13,7 @@ final class SessionControls extends FrameLayout {
     interface Actions {
         void disconnect(); void display(); void clipboard(); void key(int code);
         void chord(int code,int[] modifiers); void shortcut(int code); void text(String value); void mute(); void mouse();
+        default void keyboardClosed() { }
         default boolean textEdit(int deletions,String value){return false;}
         void videoSettings(int field,int value);
         default void displayResolution(RemoteDisplayResolutions.Mode mode) { }
@@ -60,7 +61,8 @@ final class SessionControls extends FrameLayout {
     private TextView[] networkDetails;
     private boolean endpointsExpanded;
     private View encryptionLock,encryptionOpen;
-    private boolean muted,relative=true,orbPositioned,secureAttentionVisible;
+    private TouchMode touchMode = TouchMode.ALBUM;
+    private boolean muted,orbPositioned,secureAttentionVisible;
     SessionControls(Context context,MobileUi ui,IntConsumer keyboardInsetChanged,Actions actions){
         super(context);this.ui=ui;this.actions=actions;
         this.keyboardInsetChanged = keyboardInsetChanged;
@@ -75,7 +77,7 @@ final class SessionControls extends FrameLayout {
         orb.setBackground(ui.background(0xFFF5F5F7,27));orb.setElevation(ui.dp(7));addView(orb,new LayoutParams(ui.dp(54),ui.dp(54)));
         drag(orb,orb,()->{if(menu==null)openMenu("controls");else closeMenu();});
     }
-    void setRelative(boolean value){relative=value;if(menu!=null&&menuPage.equals("controls"))openMenu("controls");}
+    void setMode(TouchMode value){touchMode=value;if(menu!=null&&menuPage.equals("controls"))openMenu("controls");}
     void setHostPlatform(String platform){
         keyboard.setPlatform(platform);
         boolean visible="windows".equals(platform);
@@ -153,7 +155,7 @@ final class SessionControls extends FrameLayout {
             scroll.setScrollBarStyle(View.SCROLLBARS_OUTSIDE_INSET);body.setPadding(0,0,ui.dp(6),0);
         }
         if(page.equals("controls")){
-            String[] labels={L10n.tr("键盘"),mouseVisible?L10n.tr("收起鼠标"):L10n.tr("虚拟鼠标"),relative?L10n.tr("相对鼠标"):L10n.tr("绝对鼠标"),L10n.tr("显示器"),L10n.tr("画面设置"),muted?L10n.tr("静音"):L10n.tr("声音"),L10n.tr("发送文件"),L10n.tr("网络状态"),"Ctrl+Alt+Del",L10n.tr("剪贴板"),L10n.tr("隐私屏")};
+            String[] labels={L10n.tr("键盘"),mouseVisible?L10n.tr("收起鼠标"):L10n.tr("虚拟鼠标"),touchMode.label(getContext()),L10n.tr("显示器"),L10n.tr("画面设置"),muted?L10n.tr("静音"):L10n.tr("声音"),L10n.tr("发送文件"),L10n.tr("网络状态"),"Ctrl+Alt+Del",L10n.tr("剪贴板"),L10n.tr("隐私屏")};
             String[] icons={"keyboard","mouse","mouse","display","sliders","audio","folder","chart","lock","clipboard","eye"};
             Runnable[] clicks={()->{closeMenu();toggleKeyboard();},this::toggleMouse,actions::mouse,actions::display,()->openMenu("video"),actions::mute,actions::sendFile,()->openMenu("network"),actions::secureAttention,actions::clipboard,actions::togglePrivacy};
             menuColumns=controlColumns();
@@ -312,6 +314,12 @@ final class SessionControls extends FrameLayout {
         return Math.min(contentHeight,Math.max(1,height-ui.dp(16)));
     }
     private void positionMenu(){if(menu==null)return;float ox=orb.getX()+orb.getWidth()/2f;float x=ox>getWidth()/2f?orb.getX()-ui.dp(12)-menu.getWidth():orb.getX()+orb.getWidth()+ui.dp(12);menu.setX(bound(x,ui.dp(8),getWidth()-menu.getWidth()-ui.dp(8)));menu.setY(bound(orb.getY(),ui.dp(8),getHeight()-menu.getHeight()-ui.dp(8)));}
+    void openKeyboardForTap() {
+        if (!pictureInPicture && menu == null && !keyboard.isOpen()) {
+            keyboard.bringToFront();
+            keyboard.open();
+        }
+    }
     boolean closeKeyboard(){return keyboard.close();}
     void resetKeyboardContext(){keyboard.resetContext();}
     void keyboardInsets(int height,boolean visible,int navigation){keyboard.updateInsets(height,visible,navigation);}

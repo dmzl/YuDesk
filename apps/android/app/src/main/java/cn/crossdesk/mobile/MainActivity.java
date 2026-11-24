@@ -500,11 +500,13 @@ public final class MainActivity extends Activity implements NativeSession.Listen
         dialog.setContentView(card);dialog.setCanceledOnTouchOutside(false);dialog.setOnCancelListener(d->end(""));Window w=dialog.getWindow();if(w!=null){w.setBackgroundDrawableResource(android.R.color.transparent);w.setDimAmount(.08f);}dialog.show();if(w!=null)w.setLayout(dp(292),-2);
     }
     private void sessionScreen(boolean autoLandscape){
-        installRoot("session",true);remoteOrientation.begin(autoLandscape,!isTablet()&&!isInMultiWindowMode());video=new RemoteVideoView(this,session);video.setRelative(preferences.getBoolean("relativeMouse",true));
+        cancelTap();
+        installRoot("session",true);remoteOrientation.begin(autoLandscape,!isTablet()&&!isInMultiWindowMode());video=new RemoteVideoView(this,session);video.setMode(TouchMode.read(preferences));
         // Video, cursor and touch input must share the area inside system bars
         // and display cutouts; fitting to the outer canvas hides image edges.
         safeArea.addView(video,0,new FrameLayout.LayoutParams(-1,-1));
         controls=new SessionControls(this,ui,video::setKeyboardInset,new SessionControls.Actions(){
+            public void keyboardClosed(){cancelTap();}
             public void disconnect(){confirmDisconnect();}public void display(){selectDisplay();}public void clipboard(){MainActivity.this.clipboard();}
             public void sendFile(){chooseFile();}public void saveFile(){saveReceivedFile();}public void secureAttention(){MainActivity.this.secureAttention();}
             public void togglePrivacy(){if(ready&&session!=null)session.togglePrivacy();}
@@ -512,13 +514,23 @@ public final class MainActivity extends Activity implements NativeSession.Listen
             public boolean textEdit(int count,String value){return sendTextEdit(count,value);}
             public void chord(int code,int[] modifiers){if(ready&&session!=null)session.chord(code,modifiers);}public void shortcut(int code){MainActivity.this.shortcut(code);}public void text(String value){sendText(value);}
             public void mute(){muted=!muted;if(session!=null)session.control(2,muted?0:1);controls.setMuted(muted);}
-            public void mouse(){boolean relative=!preferences.getBoolean("relativeMouse",true);preferences.edit().putBoolean("relativeMouse",relative).apply();video.setRelative(relative);controls.setRelative(relative);}
+            public void mouse(){
+                TouchMode next = TouchMode.read(preferences).next();
+                next.save(preferences);
+                video.setMode(next);
+                controls.setMode(next);
+            }
             public void displayResolution(RemoteDisplayResolutions.Mode mode){updateDisplayResolution(mode);}
             public void videoSettings(int field,int value){RemoteVideoSettings.Values old=MainActivity.this.videoSettings.selection;updateVideoSettings(new RemoteVideoSettings.Values(field==0?value:old.quality,field==1?value:old.frameRate,field==2?value:old.preference));}
-        });controls.setHostPlatform(hostPlatform);controls.setRelative(preferences.getBoolean("relativeMouse",true));controls.setMuted(muted);controls.videoSettings(videoSettings);controls.displayResolutions(displayResolutions,selectedDisplay);root.addView(controls,new LinearLayout.LayoutParams(-1,-1));getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        });controls.setHostPlatform(hostPlatform);controls.setMode(TouchMode.read(preferences));controls.setMuted(muted);controls.videoSettings(videoSettings);controls.displayResolutions(displayResolutions,selectedDisplay);root.addView(controls,new LinearLayout.LayoutParams(-1,-1));getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         controls.attachMouseBar(safeArea,safeArea.indexOfChild(root),new VirtualMouseBar(ui,video.mouseInput));
         privacyChanged();
         video.remoteFocusChanged=()->{if(controls!=null)controls.resetKeyboardContext();};
+        video.onTap = (x, y) -> {
+            if (!ready || session == null || pictureInPictureUi) return;
+            int request = session.imeFeedback.begin(selectedDisplay, android.os.SystemClock.uptimeMillis());
+            video.tapAt(x, y, request, selectedDisplay);
+        };
         controls.requestApplyInsets();
         video.addOnLayoutChangeListener((view,left,top,right,bottom,oldLeft,oldTop,oldRight,oldBottom)->{
             if(!pictureInPictureUi&&!isInPictureInPictureMode())updatePictureInPicture();
@@ -547,8 +559,8 @@ public final class MainActivity extends Activity implements NativeSession.Listen
     }
     private void settings(){
         LinearLayout content=formPage("settings",L10n.tr("设置"),()->home(""));
-        LinearLayout mouse=section(content,L10n.tr("鼠标控制"),MobileUi.SETTINGS_CARD_RADIUS);mouse.setPadding(dp(12),dp(12),dp(12),dp(12));boolean relative=preferences.getBoolean("relativeMouse",true);
-        mouse.addView(segments(new String[]{L10n.tr("相对位置"),L10n.tr("绝对位置")},relative?0:1,true,index->preferences.edit().putBoolean("relativeMouse",index==0).apply()));
+        LinearLayout mouse=section(content,L10n.tr("鼠标控制"),MobileUi.SETTINGS_CARD_RADIUS);mouse.setPadding(dp(12),dp(12),dp(12),dp(12));TouchMode currentMode = TouchMode.read(preferences);
+        mouse.addView(segments(TouchMode.labels(this),currentMode.ordinal(),true,index->TouchMode.values()[index].save(preferences)));
         LinearLayout picture=section(content,L10n.tr("画面偏好"),MobileUi.SETTINGS_CARD_RADIUS);picture.setPadding(dp(12),dp(12),dp(12),dp(12));int preference=Math.max(0,Math.min(2,preferences.getInt("videoPreference",1)));
         picture.addView(segments(RemoteVideoSettings.preferences(),preference,true,index->preferences.edit().putInt("videoPreference",index).apply()));ui.gap(content,28);
         LinearLayout direction=section(content,L10n.tr("屏幕方向"),MobileUi.SETTINGS_CARD_RADIUS);LinearLayout directionRow=row();directionRow.setPadding(dp(16),dp(10),dp(16),dp(10));directionRow.addView(text(L10n.tr("连接建立后锁定横屏"),16,false),new LinearLayout.LayoutParams(0,-2,1));
@@ -691,6 +703,7 @@ public final class MainActivity extends Activity implements NativeSession.Listen
     private void tapKey(int code){if(session!=null){session.key(code,true);session.key(code,false);}}
     private void shortcut(int code){if(ready&&session!=null)session.chord(code,new int[]{hostPlatform.equals("macos")?0x5B:0x11});}
     private void selectDisplay(){
+        cancelTap();
         if(!ready)return;int count=Math.min(displays.length(),8);if(count==0){toast(L10n.tr("等待远端屏幕信息"));return;}String[] labels=new String[count];for(int i=0;i<count;i++){JSONObject display=displays.optJSONObject(i);labels[i]=(i+1)+" · "+(display==null?L10n.tr("显示器"):display.optString("name",L10n.tr("显示器")));}new AlertDialog.Builder(this).setTitle(L10n.tr("显示器")).setItems(labels,(d,w)->{if(session!=null){if(w!=selectedDisplay&&video!=null)video.resetViewport();selectedDisplay=w;session.control(4,w);if(controls!=null)controls.displayResolutions(displayResolutions,selectedDisplay);if(controls!=null)controls.resetVideoStatistics();}}).show();
     }
     private void secureAttention(){
@@ -901,8 +914,23 @@ public final class MainActivity extends Activity implements NativeSession.Listen
         cancelVideoSettingsTimeout();if(controls!=null)controls.videoSettings(videoSettings);session.videoSettings(value,request);
         videoSettingsTimeout=()->{videoSettings.expire(request);if(controls!=null)controls.videoSettings(videoSettings);};mainHandler.postDelayed(videoSettingsTimeout,5000);
     }
+    private void cancelTap() { if (session != null) session.imeFeedback.cancel(); }
+
+    @Override public boolean dispatchTouchEvent(android.view.MotionEvent event) {
+        if (event.getActionMasked() == android.view.MotionEvent.ACTION_DOWN) cancelTap();
+        return super.dispatchTouchEvent(event);
+    }
+
     @Override public void data(JSONObject message){
         if(session==null)return;
+        if ("yudesk_ime".equals(message.optString("type"))) {
+            if (message.opt("id") instanceof Integer id && message.opt("display") instanceof Integer display &&
+                    session.imeFeedback.accept(id, display, selectedDisplay,
+                    android.os.SystemClock.uptimeMillis()) && Boolean.TRUE.equals(message.opt("editable"))
+                    && ready && foreground && !pictureInPictureUi && hasWindowFocus() && controls != null)
+                controls.openKeyboardForTap();
+            return;
+        }
         if(message.optInt("type",-1)==3||message.optInt("type",-1)==16){
             RemoteDisplayResolutions.Request confirmed=displayResolutions.receive(message);
             if(confirmed!=null&&session!=null)session.rememberDisplayResolution(confirmed.displayKey,confirmed.mode);
@@ -973,7 +1001,7 @@ public final class MainActivity extends Activity implements NativeSession.Listen
     private void releaseKeys(){if(session!=null)for(int code:pressed)session.key(code,false);pressed.clear();}
     private void navigateBack(){if(backAction==null)return;navigatingBack=true;try{backAction.run();}finally{navigatingBack=false;}}
     private void back(){if(controls!=null&&controls.closeKeyboard())return;pageHost.finish();if(session!=null){if(ready)confirmDisconnect();else end("");}else if(backAction!=null)navigateBack();else finish();}
-    @Override public void onWindowFocusChanged(boolean focus){super.onWindowFocusChanged(focus);if(!focus)releaseKeys();else applySystemBars(ready);}
+    @Override public void onWindowFocusChanged(boolean focus){super.onWindowFocusChanged(focus);if(!focus){cancelTap();releaseKeys();}else applySystemBars(ready);}
     // API 26–32 use this callback; API 33+ registers OnBackInvokedCallback in onCreate.
     @SuppressWarnings("deprecation")
     @android.annotation.SuppressLint("GestureBackNavigation") @Override public void onBackPressed(){back();}
@@ -1091,7 +1119,7 @@ public final class MainActivity extends Activity implements NativeSession.Listen
     }
     @Override protected void onResume(){super.onResume();privacyChanged();if(!isInPictureInPictureMode())enteredPictureInPicture=false;setPictureInPictureUi(isInPictureInPictureMode());updatePictureInPicture();if(ready&&!canUsePictureInPicture())prepareBackgroundSession(true);if(backgroundSession!=null)requestBackgroundNotifications();}
     // onStart marks a new visit; focus/resume callbacks must not reopen a refused notice.
-    @Override protected void onPause(){releaseKeys();if(controls!=null)controls.cancelMouseInput();if(video!=null)video.releaseMouse();super.onPause();}
+    @Override protected void onPause(){cancelTap();releaseKeys();if(controls!=null)controls.cancelMouseInput();if(video!=null)video.releaseMouse();super.onPause();}
     @Override protected void onStart(){super.onStart();foreground=true;restoreBackgroundSession();appUpdates.setEnabled(preferences.getBoolean("networkConsent",false));if(!preferences.getBoolean("networkConsent",false))consent(this::renderSignaling);ensureSignaling();showConnectionMessage();}
     @Override protected void onStop(){dismissPrivacyUnlockDialog();if(controls!=null)controls.closeKeyboard();foreground=false;appUpdates.setEnabled(false);if(privacyDialog!=null)privacyDialog.dismiss();pageHost.finish();
         if(connectionDialog!=null)connectionDialog.dismiss();

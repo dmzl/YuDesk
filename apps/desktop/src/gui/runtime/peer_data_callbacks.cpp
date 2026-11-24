@@ -400,6 +400,17 @@ void PeerEventHandler::OnReceiveDataBuffer(
     if (!runtime->IsAuthorizedController(remote_id)) return;
     if (remote_action.type == ControlType::text_input &&
         source_id != runtime->keyboard_label_) return;
+#ifdef __APPLE__
+    if (remote_action.ime_tap > 0 && !viewer && source_id == runtime->mouse_label_) {
+      const auto epoch = runtime->tap_epoch_.load();
+      const auto source = runtime->ControllerEvents(remote_id);
+      if (source.get() == handler) {
+        remote_action.ime_source = source;
+        remote_action.ime_epoch = epoch;
+        remote_action.ime_received = std::chrono::steady_clock::now();
+      }
+    }
+#endif
     if (runtime->remote_input_.Push(remote_id, remote_action) ==
         RemoteInputDispatcher::Result::overflow)
       LOG_WARN(
@@ -599,6 +610,13 @@ void PeerEventHandler::OnReceiveDataBuffer(
 InputOutcome GuiRuntime::ApplyRemoteInput(const std::string& remote_id,
                                   const RemoteAction& remote_action) {
   if (!IsAuthorizedController(remote_id)) return InputOutcome::ignored;
+#ifdef __APPLE__
+  if (remote_action.type != ControlType::mouse) {
+    std::lock_guard lock(tap_mutex_);
+    ++tap_revision_;
+    pending_tap_.reset();
+  }
+#endif
   if (remote_action.type == ControlType::text_input) {
     return keyboard_.ApplyRemoteText(remote_id, remote_action.text);
   }
@@ -648,10 +666,19 @@ InputOutcome GuiRuntime::ApplyRemoteInput(const std::string& remote_id,
   }
 
   if (remote_action.type == ControlType::mouse) {
-    return devices_.ApplyRemoteMouse(remote_id, remote_action.m.flag,
-        [this, &remote_action, display] {
-          return InjectRemoteMouse(remote_action, display);
-        });
+#ifdef __APPLE__
+    std::optional<AppliedMousePoint> point;
+    const auto outcome = devices_.ApplyRemoteMouse(remote_id, remote_action.m.flag, [&] {
+      return devices_.SendMouseCommand(remote_action, display, &point)
+                 ? InputOutcome::applied : InputOutcome::failed;
+    });
+    RecordAppliedTap(remote_id, remote_action,
+                     point && display == remote_action.ime_display ? &*point : nullptr, outcome);
+#else
+    const auto outcome = devices_.ApplyRemoteMouse(remote_id, remote_action.m.flag,
+        [this, &remote_action, display] { return InjectRemoteMouse(remote_action, display); });
+#endif
+    return outcome;
   } else if (remote_action.type == ControlType::keyboard) {
     return keyboard_.ApplyRemoteEvent(remote_id, remote_action);
   } else if (remote_action.type == ControlType::keyboard_state) {

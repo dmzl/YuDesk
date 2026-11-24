@@ -333,14 +333,14 @@ jobs:
       - name: Verify packaged app
         shell: bash
         run: |
-          PACKAGE_FILE="${GITHUB_WORKSPACE}/crossdesk-macos-${{ matrix.arch }}-${VERSION_NUM}.pkg"
+          PACKAGE_FILE="${GITHUB_WORKSPACE}/yudesk-macos-${{ matrix.arch }}-${VERSION_NUM}.pkg"
           VERIFY_DIR="$(mktemp -d "${RUNNER_TEMP}/crossdesk-macos-pkg.XXXXXX")"
           trap 'rm -rf "${VERIFY_DIR}"' EXIT
 
           pkgutil --expand-full "${PACKAGE_FILE}" "${VERIFY_DIR}/expanded"
-          APP_PATH="$(find "${VERIFY_DIR}/expanded" -type d -name 'CrossDesk.app' -print -quit)"
+          APP_PATH="$(find "${VERIFY_DIR}/expanded" -type d -name 'YuDesk.app' -print -quit)"
           if [[ -z "${APP_PATH}" ]]; then
-            echo "CrossDesk.app is missing from ${PACKAGE_FILE}" >&2
+            echo "YuDesk.app is missing from ${PACKAGE_FILE}" >&2
             exit 1
           fi
 
@@ -357,14 +357,14 @@ jobs:
           CROSSDESK_MACOS_NOTARY_S3_ACCELERATION: "false"
         run: |
           bash ./apps/desktop/scripts/macos/notarize_pkg.sh \
-            "crossdesk-macos-${{ matrix.arch }}-${VERSION_NUM}.pkg"
+            "yudesk-macos-${{ matrix.arch }}-${VERSION_NUM}.pkg"
 
       - name: Upload macOS notarization diagnostics
         if: always() && env.MACOS_SIGNING_REQUIRED == 'true'
         uses: actions/upload-artifact@v6
         with:
           name: macos-notarization-${{ matrix.arch }}-${{ env.VERSION_NUM }}
-          path: crossdesk-macos-${{ matrix.arch }}-${{ env.VERSION_NUM }}.pkg.notary*.json
+          path: yudesk-macos-${{ matrix.arch }}-${{ env.VERSION_NUM }}.pkg.notary*.json
           if-no-files-found: ignore
           retention-days: 14
 
@@ -373,21 +373,21 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           name: macos-pending-notarization-${{ matrix.arch }}-${{ env.VERSION_NUM }}
-          path: crossdesk-macos-${{ matrix.arch }}-${{ env.VERSION_NUM }}.pkg
+          path: yudesk-macos-${{ matrix.arch }}-${{ env.VERSION_NUM }}.pkg
           if-no-files-found: error
           retention-days: 14
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v6
         with:
-          name: crossdesk-macos-${{ matrix.arch }}-${{ env.VERSION_NUM }}
-          path: crossdesk-macos-${{ matrix.arch }}-${{ env.VERSION_NUM }}.pkg
+          name: yudesk-macos-${{ matrix.arch }}-${{ env.VERSION_NUM }}
+          path: yudesk-macos-${{ matrix.arch }}-${{ env.VERSION_NUM }}.pkg
           if-no-files-found: error
 
       - name: Move files to release dir
         run: |
           mkdir -p release
-          cp crossdesk-macos-${{ matrix.arch }}-${{ env.VERSION_NUM }}.pkg release/
+          cp yudesk-macos-${{ matrix.arch }}-${{ env.VERSION_NUM }}.pkg release/
 
       - name: Remove macOS signing credentials
         if: always() && env.MACOS_SIGNING_REQUIRED == 'true'
