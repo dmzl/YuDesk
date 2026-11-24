@@ -5,6 +5,10 @@ add_rules("mode.release", "mode.debug")
 set_policy("package.precompiled", false)
 add_cxflags("-fPIC")
 includes("../../../deps/submodules/minirtc")
+package("libyuv")
+    add_patches("2025.8.14", path.join(os.scriptdir(), "patches/libyuv-android-jpeg.patch"),
+                "6751497c755d228601836055173b51dff90a1289602d9158a2ad860cf7587e86")
+package_end()
 add_requires("openssl3 3.3.2", {system = false, configs = {shared = false}})
 
 includes("../../../libs/controller/mobile_direct.lua")

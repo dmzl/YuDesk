@@ -1467,6 +1467,10 @@ void GuiApplication::InitializeUi() {
   slint::set_xdg_app_id("crossdesk");
 #endif
   ui_ = std::make_unique<SlintUi>();
+#ifdef __APPLE__
+  ui_->main->set_application_name("YuDesk");
+  ui_->wall->set_application_name("YuDesk");
+#endif
   for (const auto& window : {ui_->main, ui_->wall})
     window->set_ip_direct_enabled(config_center_->IsIpDirectEnabled());
   ui_->main->set_lan_mode(config_center_->GetConnectionMode() ==

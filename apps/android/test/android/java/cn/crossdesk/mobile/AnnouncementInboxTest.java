@@ -24,7 +24,7 @@ public class AnnouncementInboxTest {
     }
     @After public void cleanup()throws Exception {
         main(()->inbox.close());
-        try(var paths=Files.walk(directory.toPath())){for(var path:paths.sorted(Comparator.reverseOrder()).toList())Files.delete(path);}
+        try(var paths=Files.walk(directory.toPath())){for(var path:paths.sorted(Comparator.reverseOrder()).collect(java.util.stream.Collectors.toList()))Files.delete(path);}
     }
     private static JSONObject answer(JSONObject request,int count,long revision)throws Exception {
         int offset=request.getInt("offset");boolean summary=request.getBoolean("summary_only");JSONArray items=new JSONArray();

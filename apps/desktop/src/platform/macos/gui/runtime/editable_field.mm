@@ -3,6 +3,9 @@
 
 #include "editable_field.h"
 
+#include <optional>
+#include <thread>
+
 namespace crossdesk {
 namespace {
 // Copy only non-content attributes; every AX request has a short timeout.
@@ -20,9 +23,8 @@ AXUIElementRef Element(AXUIElementRef source, CFStringRef key) {
   CFRelease(value);
   return nullptr;
 }
-}  // namespace
-
-bool EditableAt(double x, double y, std::chrono::steady_clock::time_point deadline) {
+// A newly activated web view may expose neither focus nor hit on its first AX request.
+std::optional<bool> ProbeEditableAt(double x, double y, std::chrono::steady_clock::time_point deadline) {
   @autoreleasepool {
     if (std::chrono::steady_clock::now() >= deadline || !AXIsProcessTrusted()) return false;
     auto system = AXUIElementCreateSystemWide();
@@ -33,6 +35,11 @@ bool EditableAt(double x, double y, std::chrono::steady_clock::time_point deadli
     // A system-wide element changes the process default. Restore it immediately.
     AXUIElementSetMessagingTimeout(system, 0);
     CFRelease(system);
+    if (!hit || !focus) {
+      if (hit) CFRelease(hit);
+      if (focus) CFRelease(focus);
+      return std::nullopt;
+    }
     pid_t pid = 0;
     bool matched = false;
     if (focus && AXUIElementGetPid(focus, &pid) == kAXErrorSuccess &&
@@ -66,5 +73,17 @@ bool EditableAt(double x, double y, std::chrono::steady_clock::time_point deadli
     if (focus) CFRelease(focus);
     return editable && std::chrono::steady_clock::now() < deadline;
   }
+}
+}  // namespace
+
+bool EditableAt(double x, double y, std::chrono::steady_clock::time_point deadline) {
+  using namespace std::chrono_literals;
+  for (int attempt = 0; attempt < 3; ++attempt) {
+    auto result = ProbeEditableAt(x, y, deadline);
+    if (result.has_value()) return *result;
+    if (attempt == 2 || std::chrono::steady_clock::now() + 65ms >= deadline) break;
+    std::this_thread::sleep_for(65ms);
+  }
+  return false;
 }
 }  // namespace crossdesk

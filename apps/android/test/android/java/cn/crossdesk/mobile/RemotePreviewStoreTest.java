@@ -24,7 +24,7 @@ public class RemotePreviewStoreTest {
     }
     @After public void cleanup()throws Exception{
         store.clear();flush();store.io.shutdown();
-        try(var paths=Files.walk(root.toPath())){for(var path:paths.sorted(Comparator.reverseOrder()).toList())Files.delete(path);}
+        try(var paths=Files.walk(root.toPath())){for(var path:paths.sorted(Comparator.reverseOrder()).collect(java.util.stream.Collectors.toList()))Files.delete(path);}
         context.deleteSharedPreferences(prefix);context.deleteSharedPreferences(prefix+"-index");
     }
     private void flush()throws Exception{store.io.submit(()->{}).get(5,TimeUnit.SECONDS);InstrumentationRegistry.getInstrumentation().waitForIdleSync();}

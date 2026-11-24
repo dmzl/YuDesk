@@ -112,6 +112,7 @@ final class RemoteVideoView extends FrameLayout implements SurfaceHolder.Callbac
     }
     void videoSize(int width, int height) {
         if (width <= 0 || height <= 0) return;
+        if (frameWidth != width || frameHeight != height) cancelAlbumTouch();
         frameWidth = width; frameHeight = height; fit();
     }
     void tapAt(float px, float py, int id, int display) {
@@ -122,7 +123,11 @@ final class RemoteVideoView extends FrameLayout implements SurfaceHolder.Callbac
 
     void resetViewport() { releaseMouse(); viewport.reset(); applyViewport(); }
     void setKeyboardInset(int inset) {
-        if (viewport.setKeyboardInset(inset)) applyViewport();
+        if (viewport.setKeyboardInset(inset)) {
+            cancelAlbumTouch();
+            if (mode == TouchMode.ALBUM) viewport.panAlbum(0, 0);
+            applyViewport();
+        }
     }
     static Rect previewCrop(int width,int height){
         int w=width,h=height;
@@ -144,6 +149,7 @@ final class RemoteVideoView extends FrameLayout implements SurfaceHolder.Callbac
         if (getWidth() == 0 || getHeight() == 0) return;
         RemoteViewport active=pictureInPicture?pictureInPictureViewport:viewport;
         active.fit(getWidth(), getHeight(), frameWidth, frameHeight);
+        if (mode == TouchMode.ALBUM) active.panAlbum(0, 0);
         video.setLayoutParams(new LayoutParams(active.baseWidth(),active.baseHeight(),android.view.Gravity.CENTER));
         applyViewport();
     }
@@ -161,7 +167,17 @@ final class RemoteVideoView extends FrameLayout implements SurfaceHolder.Callbac
         session.pointer(x,y,flag,wheel);
         cursor.invalidate();
     }
-    @Override protected void onSizeChanged(int w,int h,int oldw,int oldh) { post(this::fit); }
+    private void cancelAlbumTouch() {
+        if (mode == TouchMode.ALBUM && album != null) {
+            album.cancel();
+            suppressPointerGesture = true;
+        }
+    }
+
+    @Override protected void onSizeChanged(int w,int h,int oldw,int oldh) {
+        cancelAlbumTouch();
+        post(this::fit);
+    }
     private void moveRelative(float dx, float dy) {
         if (pictureInPicture || viewport.width() <= 0 || viewport.height() <= 0) return;
         if (!Float.isFinite(dx) || !Float.isFinite(dy) || (dx == 0 && dy == 0)) return;

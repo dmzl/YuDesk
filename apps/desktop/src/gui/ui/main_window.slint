@@ -365,7 +365,8 @@ component PasswordInput inherits FlatSurface {
 
 export component MainWindow inherits Window {
     title: root.window-title;
-    out property <string> window-title: root.gallery-mode ? "CrossDesk " + GalleryStrings.texts[54] : "CrossDesk";
+    in property <string> application-name: "CrossDesk";
+    out property <string> window-title: root.gallery-mode ? root.application-name + " " + GalleryStrings.texts[54] : root.application-name;
     icon: @image-url("../../../resources/linux/crossdesk_256x256.png");
     preferred-width: root.minimum-window-width;
     preferred-height: root.minimum-window-height;
@@ -3413,7 +3414,7 @@ export component MainWindow inherits Window {
                                 image-fit: contain;
                             }
                             Text {
-                                text: "CrossDesk"; font-size: 16px; font-weight: 600;
+                                text: root.application-name; font-size: 16px; font-weight: 600;
                                 color: WorkbenchStyle.text; vertical-alignment: center;
                             }
                             Text {

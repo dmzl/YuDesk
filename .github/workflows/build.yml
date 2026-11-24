@@ -670,8 +670,8 @@ jobs:
       - name: Rename artifacts
         run: |
           mkdir -p release
-          cp artifacts/crossdesk-macos-x64-${{ needs.prepare-version.outputs.version }}/* release/crossdesk-macos-x64-${{ needs.prepare-version.outputs.version }}.pkg
-          cp artifacts/crossdesk-macos-arm64-${{ needs.prepare-version.outputs.version }}/* release/crossdesk-macos-arm64-${{ needs.prepare-version.outputs.version }}.pkg
+          cp artifacts/yudesk-macos-x64-${{ needs.prepare-version.outputs.version }}/* release/yudesk-macos-x64-${{ needs.prepare-version.outputs.version }}.pkg
+          cp artifacts/yudesk-macos-arm64-${{ needs.prepare-version.outputs.version }}/* release/yudesk-macos-arm64-${{ needs.prepare-version.outputs.version }}.pkg
           for ARCH in amd64 arm64; do
             for PACKAGE in crossdesk crossdesk-virtual-desktop-xfce; do
               FILE="${PACKAGE}-linux-${ARCH}-${{ needs.prepare-version.outputs.version }}.deb"
