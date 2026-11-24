@@ -237,6 +237,12 @@ int PlatformMouseController::SendMouseCommand(RemoteAction remote_action,
   }
 
   if (mouse_event) {
+    if (remote_action.m.flag == MouseFlag::wheel_vertical ||
+        remote_action.m.flag == MouseFlag::wheel_horizontal) {
+      // A posted pointer move may still be queued when Quartz creates the wheel
+      // event. Use the coordinates carried by this wheel packet itself.
+      CGEventSetLocation(mouse_event, mouse_point);
+    }
     CGEventSetIntegerValueField(mouse_event, kCGEventSourceUserData,
                                 kCrossDeskInjectedEvent);
     CGEventPost(kCGHIDEventTap, mouse_event);
