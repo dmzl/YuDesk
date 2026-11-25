@@ -388,4 +388,5 @@
     <string name="text_53b856ab7ac9d8e2" formatted="false">"IP 直接接続に失敗しました。コンピュータのアドレス、ポート、ネットワークを確認してください。"</string>
     <string name="text_3a940622a8012b31" formatted="false">"ローカルアドレス"</string>
     <string name="text_2c5e32d2c5de5c2b" formatted="false">"リモートアドレス"</string>
+    <string name="text_01bc5a5cd50f3e49" formatted="false">"パソコンの現在の解像度に合わせる"</string>
 </resources>

@@ -16,6 +16,7 @@ final class SessionControls extends FrameLayout {
         default void keyboardClosed() { }
         default boolean textEdit(int deletions,String value){return false;}
         void videoSettings(int field,int value);
+        default boolean followsComputerResolution(String key) { return true; }
         default void displayResolution(RemoteDisplayResolutions.Mode mode) { }
         void sendFile(); void saveFile(); void secureAttention();
         default void togglePrivacy() { }
@@ -115,6 +116,12 @@ final class SessionControls extends FrameLayout {
     }
     void setMuted(boolean value){muted=value;if(menu!=null&&menuPage.equals("controls"))openMenu("controls");}
     void videoSize(int width,int height){waiting.setVisibility(GONE);positionMouse();}
+    void waitForDisplay() {
+        closeMenu();
+        waiting.setVisibility(VISIBLE);
+        positionMouse();
+        resetVideoStatistics();
+    }
     void resetVideoStatistics(){statistics(new RemoteNetworkStatistics.Snapshot(network.report,0,0,0,Double.NaN,network.rtt,network.remoteEncoder,network.localDecoder));}
     void statistics(RemoteNetworkStatistics.Snapshot value){network=value;renderNetwork();}
     void videoSettings(RemoteVideoSettings value){settings=value;renderVideoSettings();}
@@ -219,21 +226,33 @@ final class SessionControls extends FrameLayout {
     private void renderResolutions(){
         if(resolutionButton==null)return;
         RemoteDisplayResolutions.Display display=resolutions.display(resolutionDisplay);
-        boolean enabled=display!=null&&!display.modes.isEmpty()&&!resolutions.pending;
-        resolutionButton.setText(display==null?L10n.tr("设备不支持"):display.current.label()+" ▾");
+        boolean enabled=display!=null&&!resolutions.pending;
+        String label=L10n.tr("设备不支持");
+        if(display!=null){
+            label=display.current.label();
+            if(actions.followsComputerResolution(display.key))label=L10n.tr("跟随电脑当前分辨率")+" · "+label;
+        }
+        resolutionButton.setText(display==null?label:label+" ▾");
         resolutionButton.setEnabled(enabled);resolutionButton.setAlpha(enabled?1f:.45f);
         String feedback=resolutions.feedback();resolutionFeedback.setText(feedback);resolutionFeedback.setVisibility(feedback.isEmpty()?GONE:VISIBLE);
     }
     private void chooseResolution(){
         RemoteDisplayResolutions.Display display=resolutions.display(resolutionDisplay);
-        if(display==null||resolutions.pending||display.modes.isEmpty())return;
-        String[] labels=new String[display.modes.size()];int selected=-1;
-        for(int i=0;i<labels.length;i++){labels[i]=display.modes.get(i).label();if(display.current.same(display.modes.get(i)))selected=i;}
+        if(display==null||resolutions.pending)return;
+        String[] labels=new String[display.modes.size()+1];
+        labels[0]=L10n.tr("跟随电脑当前分辨率");
+        boolean follows=actions.followsComputerResolution(display.key);
+        int selected=follows?0:-1;
+        for(int i=0;i<display.modes.size();i++){
+            RemoteDisplayResolutions.Mode mode=display.modes.get(i);
+            labels[i+1]=mode.label();
+            if(!follows&&display.current.same(mode))selected=i+1;
+        }
         resolutionDialog=new android.app.AlertDialog.Builder(getContext()).setTitle(L10n.tr("被控端分辨率"))
             .setSingleChoiceItems(labels,selected,(dialog,index)->{
                 dialog.dismiss();resolutionDialog=null;
                 RemoteDisplayResolutions.Display current=resolutions.display(resolutionDisplay);
-                if(current!=null&&current.id==display.id&&current.key.equals(display.key))actions.displayResolution(display.modes.get(index));
+                if(current!=null&&current.id==display.id&&current.key.equals(display.key))actions.displayResolution(index==0?null:display.modes.get(index-1));
             }).setNegativeButton(L10n.tr("取消"),null).show();
     }
     private void renderVideoSettings(){

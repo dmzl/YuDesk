@@ -11867,6 +11867,18 @@
       "fr": "Adresse distante",
       "es": "Dirección remota",
       "pt-BR": "Endereço remoto"
+    },
+    "跟随电脑当前分辨率": {
+      "zh-Hans": "跟随电脑当前分辨率",
+      "en": "Follow current computer resolution",
+      "ru": "Использовать текущее разрешение компьютера",
+      "zh-Hant": "跟隨電腦目前的解析度",
+      "ja": "パソコンの現在の解像度に合わせる",
+      "ko": "컴퓨터의 현재 해상도 사용",
+      "de": "Aktuelle Computerauflösung verwenden",
+      "fr": "Suivre la résolution actuelle de l’ordinateur",
+      "es": "Usar la resolución actual del ordenador",
+      "pt-BR": "Usar a resolução atual do computador"
     }
   },
   "desktop": {
@@ -13328,7 +13340,8 @@
       "IP 直连密码",
       "IP 直连失败，请检查电脑的直连地址和网络。",
       "本端地址",
-      "对端地址"
+      "对端地址",
+      "跟随电脑当前分辨率"
     ],
     "ios": [
       "%1$@ 传输失败",

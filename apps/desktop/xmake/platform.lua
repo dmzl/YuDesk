@@ -108,7 +108,7 @@ function setup_platform_settings()
         add_cxflags("-Wno-unused-variable")
         add_frameworks("Cocoa", "CoreGraphics", "ColorSync", "Metal", "QuartzCore", "IOKit",
             "IOSurface",
-            "ScreenCaptureKit", "AVFoundation", "CoreMedia", "CoreVideo",
+            "ScreenCaptureKit", "AVFoundation", "CoreMedia", "CoreVideo", "CoreImage",
             "CoreAudio", "AudioToolbox")
     end
 end

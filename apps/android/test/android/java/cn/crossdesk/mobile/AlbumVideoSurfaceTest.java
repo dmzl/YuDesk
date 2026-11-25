@@ -28,6 +28,32 @@ public final class AlbumVideoSurfaceTest {
         try { view.dispatchTouchEvent(event); } finally { event.recycle(); }
     }
 
+    @Test public void switchClearsBackgroundFrameUntilNewDisplayRenders() {
+        try (var scenario = ActivityScenario.launch(MainActivity.class)) {
+            scenario.onActivity(activity -> {
+                var session = new NativeSession(activity, "localhost", 1, "", "", activity);
+                var retained = new BackgroundSession(activity, session, "localhost", 1, "");
+                try {
+                    var sessionField = MainActivity.class.getDeclaredField("session");
+                    var background = MainActivity.class.getDeclaredField("backgroundSession");
+                    var ready = MainActivity.class.getDeclaredField("ready");
+                    sessionField.setAccessible(true);background.setAccessible(true);ready.setAccessible(true);
+                    sessionField.set(activity, session);background.set(activity, retained);ready.setBoolean(activity, true);
+                    activity.videoSize(1920, 1080);
+                    activity.switchToDisplay(1);
+                    var save = MainActivity.class.getDeclaredMethod("captureBackgroundSession");
+                    save.setAccessible(true);save.invoke(activity);
+                    assertEquals(1, retained.selectedDisplay);
+                    assertEquals(0, retained.width);assertEquals(0, retained.height);
+                    activity.videoSize(540, 950);save.invoke(activity);
+                    assertEquals(540, retained.width);assertEquals(950, retained.height);
+                    ready.setBoolean(activity, false);background.set(activity, null);sessionField.set(activity, null);
+                } catch (ReflectiveOperationException error) {throw new AssertionError(error);}
+                finally {session.close();}
+            });
+        }
+    }
+
     @Test public void pinchAndPanTransformVideoBeforeHitTesting() {
         try (var scenario = ActivityScenario.launch(MainActivity.class)) {
             RemoteVideoView[] live = new RemoteVideoView[1];
@@ -67,6 +93,9 @@ public final class AlbumVideoSurfaceTest {
                 touch(view,down,MotionEvent.ACTION_DOWN,cy,cx+gap);
                 touch(view,down,MotionEvent.ACTION_UP,cy,cx+gap);
                 assertEquals(1,taps[0]); assertEquals(.5,target[0],.005); assertEquals(.5,target[1],.005);
+                view.switchDisplay(1);
+                assertNotSame("the previous desktop buffer must leave the view on screen change",
+                        surface, view.getChildAt(0));
                 // Detach the Surface before ending its test-only session.
                 a.setContentView(new View(a)); sessions[0].close();
             });

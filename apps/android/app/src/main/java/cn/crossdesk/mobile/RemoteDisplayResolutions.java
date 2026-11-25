@@ -48,13 +48,18 @@ final class RemoteDisplayResolutions {
     }
     private List<Display> displays=new ArrayList<>();
     Request requested;
+    private long lastRequestId;
     boolean pending,failed;
     Display display(int id){for(Display display:displays)if(display.id==id)return display;return null;}
     Request begin(int displayId,Mode mode){
         Display display=display(displayId);
         if(pending||display==null||!display.supports(mode)||display.current.same(mode))return null;
-        long next=requested==null?1:(requested.id+1)&0xffffffffL;
-        requested=new Request(display,mode,next==0?1:next);pending=true;failed=false;return requested;
+        lastRequestId=lastRequestId==0xffffffffL?1:lastRequestId+1;
+        requested=new Request(display,mode,lastRequestId);pending=true;failed=false;return requested;
+    }
+    void selectionSaved(String displayKey) {
+        if (!pending && requested != null && requested.displayKey.equals(displayKey)) requested = null;
+        failed = false;
     }
     void expire(long id){if(pending&&requested!=null&&requested.id==id){pending=false;failed=true;}}
     Request receive(JSONObject message){

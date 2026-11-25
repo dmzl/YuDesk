@@ -46,16 +46,25 @@ final class RemoteResolutionStore {
             return result;
         } catch(Exception ignored) { return new JSONArray(); }
     }
+    boolean followsComputer(String host, int port, String remote, String displayKey) {
+        JSONArray saved = load(host, port, remote);
+        for (int i = 0; i < saved.length(); i++) {
+            if (displayKey.equals(saved.optJSONObject(i).optString("display_key"))) return false;
+        }
+        return true;
+    }
     synchronized void remember(String host,int port,String remote,String displayKey,RemoteDisplayResolutions.Mode mode) {
-        if(remote.isEmpty()||!validKey(displayKey)||mode==null||mode.width<1||mode.width>32768||mode.height<1||mode.height>32768)return;
+        if(remote.isEmpty()||!validKey(displayKey)||(mode!=null&&(mode.width<1||mode.width>32768||mode.height<1||mode.height>32768)))return;
         try {
             JSONArray saved=load(host,port,remote),updated=new JSONArray();
             for(int i=0;i<saved.length();i++) {
                 JSONObject value=saved.getJSONObject(i);
                 if(!displayKey.equals(value.getString("display_key")))updated.put(value);
             }
-            if(updated.length()>=32)updated.remove(0);
-            updated.put(new JSONObject().put("display_key",displayKey).put("width",mode.width).put("height",mode.height));
+            if (mode != null) {
+                if(updated.length()>=32)updated.remove(0);
+                updated.put(new JSONObject().put("display_key",displayKey).put("width",mode.width).put("height",mode.height));
+            }
             preferences.edit().putString(key(host,port,remote),updated.toString()).apply();
         } catch(Exception error) { Log.w("CrossDesk","Could not save remote display resolution",error); }
     }

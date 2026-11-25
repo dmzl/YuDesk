@@ -62,6 +62,8 @@ final class NativeSession implements AutoCloseable {
     private boolean presenceRequested;
     private volatile boolean closed;
     private Surface surface;
+    private long selectedDisplayRevision; // Main thread.
+    private volatile long renderingDisplayRevision; // RTC publishes after detaching the old decoder.
     private volatile AudioPlayer audio;
     private final SessionDocuments documents;
     private boolean sendingFile;
@@ -183,6 +185,7 @@ final class NativeSession implements AutoCloseable {
     }
     // Called on arbitrary native callback threads; borrowed payloads were copied by JNI.
     @SuppressWarnings("unused") private void onNativeEvent(int type, byte[] bytes) {
+        long frameRevision = renderingDisplayRevision;
         execute(() -> {
             String value = new String(bytes, StandardCharsets.UTF_8);
             try {
@@ -247,7 +250,7 @@ final class NativeSession implements AutoCloseable {
                 }
                 else if (type == 5) {
                     int width = event.getInt("width"), height = event.getInt("height");
-                    ui(() -> listener.videoSize(width, height));
+                    ui(() -> { if (frameRevision == selectedDisplayRevision) listener.videoSize(width, height); });
                 } else if (type == 7) networkStatistics.receive(new RemoteNetworkStatistics.Report(event),RemoteNetworkStatistics.now());
                 else if (type == 8 && signalReady) ui(() -> listener.announcement(event));
                 else if (type == 9 && signalReady && presenceRequested) {
@@ -278,6 +281,7 @@ final class NativeSession implements AutoCloseable {
     void displayResolution(RemoteDisplayResolutions.Request request){
         execute(()->{if(!connected||!nDisplayResolution(handle,request.displayId,request.displayKey,request.mode.width,request.mode.height,request.id))ui(()->listener.displayResolutionFailed(request.id));});
     }
+    boolean followsComputerResolution(String key) { return resolutionStore.followsComputer(host,port,remote,key); }
     void rememberDisplayResolution(String displayKey,RemoteDisplayResolutions.Mode mode){
         if(!closed&&connected)resolutionStore.remember(host,port,remote,displayKey,mode);
     }
@@ -334,9 +338,22 @@ final class NativeSession implements AutoCloseable {
         return true;
     }
     void control(int type, int value) {
+        if (type == 4) {
+            long revision = ++selectedDisplayRevision;
+            execute(() -> {
+                surface = null;
+                // nSurface synchronizes with the render callback. When it returns,
+                // every old size notification has captured the previous revision.
+                if (handle != 0) nSurface(handle, null);
+                if (connected) nControl(handle, type, value);
+                renderingDisplayRevision = revision;
+                networkStatistics.resetVideo();
+            });
+            return;
+        }
         AudioPlayer player = audio;
         if (type == 2 && player != null) player.setEnabled(value != 0);
-        execute(() -> { if (connected){nControl(handle, type, value);if(type==4)networkStatistics.resetVideo();} });
+        execute(() -> { if (connected) nControl(handle, type, value); });
     }
     void lockPrivacy() { sendPrivacy(true); }
     void togglePrivacy() { sendPrivacy(false); }

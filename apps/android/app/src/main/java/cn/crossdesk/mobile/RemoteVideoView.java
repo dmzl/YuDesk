@@ -20,7 +20,7 @@ import android.widget.FrameLayout;
 
 @android.annotation.SuppressLint("ViewConstructor") // Constructed only with a live session, never from XML.
 final class RemoteVideoView extends FrameLayout implements SurfaceHolder.Callback {
-    private final SurfaceView video;
+    private SurfaceView video;
     private final Cursor cursor;
     private final NativeSession session;
     final RemoteMouseInput mouseInput;
@@ -72,8 +72,7 @@ final class RemoteVideoView extends FrameLayout implements SurfaceHolder.Callbac
             }
         }, ViewConfiguration.get(context).getScaledTouchSlop(), 16 * getResources().getDisplayMetrics().density);
         setBackgroundColor(Color.BLACK);
-        video = new SurfaceView(context); video.getHolder().addCallback(this);
-        addView(video, new LayoutParams(1, 1, android.view.Gravity.CENTER));
+        attachVideoSurface();
         cursor = new Cursor(context);
         // Keep input in container coordinates so transforms never move its hit area.
         addView(cursor, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
@@ -121,7 +120,21 @@ final class RemoteVideoView extends FrameLayout implements SurfaceHolder.Callbac
         session.tap(px, py, id, display);
     }
 
-    void resetViewport() { releaseMouse(); viewport.reset(); applyViewport(); }
+    private void attachVideoSurface() {
+        video = new SurfaceView(getContext());
+        video.getHolder().addCallback(this);
+        addView(video, 0, new LayoutParams(1, 1, android.view.Gravity.CENTER));
+    }
+    void switchDisplay(int index) {
+        releaseMouse();
+        viewport.reset();
+        // The compositor can keep presenting the last buffer after its decoder detaches.
+        video.getHolder().removeCallback(this);
+        removeView(video);
+        session.control(4, index);
+        attachVideoSurface();
+        applyViewport();
+    }
     void setKeyboardInset(int inset) {
         if (viewport.setKeyboardInset(inset)) {
             cancelAlbumTouch();

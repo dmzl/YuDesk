@@ -520,6 +520,7 @@ public final class MainActivity extends Activity implements NativeSession.Listen
                 video.setMode(next);
                 controls.setMode(next);
             }
+            public boolean followsComputerResolution(String key){return session!=null&&session.followsComputerResolution(key);}
             public void displayResolution(RemoteDisplayResolutions.Mode mode){updateDisplayResolution(mode);}
             public void videoSettings(int field,int value){RemoteVideoSettings.Values old=MainActivity.this.videoSettings.selection;updateVideoSettings(new RemoteVideoSettings.Values(field==0?value:old.quality,field==1?value:old.frameRate,field==2?value:old.preference));}
         });controls.setHostPlatform(hostPlatform);controls.setMode(TouchMode.read(preferences));controls.setMuted(muted);controls.videoSettings(videoSettings);controls.displayResolutions(displayResolutions,selectedDisplay);root.addView(controls,new LinearLayout.LayoutParams(-1,-1));getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
@@ -704,7 +705,34 @@ public final class MainActivity extends Activity implements NativeSession.Listen
     private void shortcut(int code){if(ready&&session!=null)session.chord(code,new int[]{hostPlatform.equals("macos")?0x5B:0x11});}
     private void selectDisplay(){
         cancelTap();
-        if(!ready)return;int count=Math.min(displays.length(),8);if(count==0){toast(L10n.tr("等待远端屏幕信息"));return;}String[] labels=new String[count];for(int i=0;i<count;i++){JSONObject display=displays.optJSONObject(i);labels[i]=(i+1)+" · "+(display==null?L10n.tr("显示器"):display.optString("name",L10n.tr("显示器")));}new AlertDialog.Builder(this).setTitle(L10n.tr("显示器")).setItems(labels,(d,w)->{if(session!=null){if(w!=selectedDisplay&&video!=null)video.resetViewport();selectedDisplay=w;session.control(4,w);if(controls!=null)controls.displayResolutions(displayResolutions,selectedDisplay);if(controls!=null)controls.resetVideoStatistics();}}).show();
+        if (!ready) return;
+        int count = Math.min(displays.length(), 8);
+        if (count == 0) { toast(L10n.tr("等待远端屏幕信息")); return; }
+        String[] labels = new String[count];
+        for (int i = 0; i < count; i++) {
+            JSONObject display = displays.optJSONObject(i);
+            String fallback = L10n.tr("显示器");
+            labels[i] = (i+1)+" · "+(display == null ? fallback : display.optString("name", fallback));
+        }
+        new AlertDialog.Builder(this).setTitle(L10n.tr("显示器"))
+                .setSingleChoiceItems(labels, selectedDisplay, (dialog, index) -> {
+                    dialog.dismiss();
+                    switchToDisplay(index);
+                }).show();
+    }
+    void switchToDisplay(int index) {
+        if (session == null || !ready) return;
+        selectedDisplay = index;
+        videoWidth = videoHeight = 0;
+        pictureInPicture.clearVideo();
+        updatePictureInPicture();
+        captureBackgroundSession();
+        if (video != null) video.switchDisplay(index);
+        else session.control(4, index);
+        if (controls != null) {
+            controls.waitForDisplay();
+            controls.displayResolutions(displayResolutions, index);
+        }
     }
     private void secureAttention(){
         if(!ready||session==null||!hostPlatform.equals("windows"))return;
@@ -888,8 +916,11 @@ public final class MainActivity extends Activity implements NativeSession.Listen
     private void updateDisplayResolution(RemoteDisplayResolutions.Mode mode){
         if(!ready||session==null||!hasNetworkConsent())return;
         RemoteDisplayResolutions.Display display=displayResolutions.display(selectedDisplay);
-        if(!displayResolutions.pending&&display!=null&&display.supports(mode)&&display.current.same(mode)){
-            session.rememberDisplayResolution(display.key,mode);return;
+        if(!displayResolutions.pending&&display!=null&&(mode==null||(display.supports(mode)&&display.current.same(mode)))){
+            session.rememberDisplayResolution(display.key,mode);
+            displayResolutions.selectionSaved(display.key);
+            if(controls!=null)controls.displayResolutions(displayResolutions,selectedDisplay);
+            return;
         }
         RemoteDisplayResolutions.Request request=displayResolutions.begin(selectedDisplay,mode);if(request==null)return;
         cancelDisplayResolutionTimeout();session.displayResolution(request);

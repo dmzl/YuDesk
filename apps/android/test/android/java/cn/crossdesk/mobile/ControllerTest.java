@@ -47,6 +47,32 @@ public class ControllerTest {
         }finally{session.close();worker.submit(()->{}).get(5,TimeUnit.SECONDS);}
     }
 
+    @Test public void queuedSizeFromBeforeDisplayRoundTripDoesNotSignalFirstFrame() throws Exception {
+        var instrumentation=InstrumentationRegistry.getInstrumentation();
+        var sizes=new java.util.ArrayList<Integer>();
+        var listener=(NativeSession.Listener)java.lang.reflect.Proxy.newProxyInstance(
+                NativeSession.Listener.class.getClassLoader(), new Class[]{NativeSession.Listener.class},
+                (unused,method,args)->{if(method.getName().equals("videoSize"))sizes.add((Integer)args[0]);return null;});
+        var session=new NativeSession(instrumentation.getTargetContext(),"localhost",1,"","",listener);
+        var event=NativeSession.class.getDeclaredMethod("onNativeEvent",int.class,byte[].class);
+        event.setAccessible(true);
+        var executor=NativeSession.class.getDeclaredField("RTC");executor.setAccessible(true);
+        var rtc=(ExecutorService)executor.get(null);
+        try{
+            instrumentation.runOnMainSync(()->{
+                try {
+                    event.invoke(session,5,"{\"width\":1920,\"height\":1080}".getBytes());
+                    session.control(4,1);
+                    session.control(4,0);
+                } catch(Exception error) {throw new AssertionError(error);}
+            });
+            rtc.submit(()->{}).get(5,TimeUnit.SECONDS);
+            event.invoke(session,5,"{\"width\":540,\"height\":950}".getBytes());
+            rtc.submit(()->{}).get(5,TimeUnit.SECONDS);instrumentation.waitForIdleSync();
+            assertEquals(java.util.Collections.singletonList(540),sizes);
+        }finally{session.close();}
+    }
+
     @Test public void repeatedNativeConnectedEventsNotifyAndInitializeOnlyOnce()throws Exception{
         var instrumentation=InstrumentationRegistry.getInstrumentation();
         var notifications=new java.util.concurrent.atomic.AtomicInteger();

@@ -13,6 +13,7 @@
 #include <AppKit/AppKit.h>
 #include <ApplicationServices/ApplicationServices.h>
 #include <CoreGraphics/CoreGraphics.h>
+#import <CoreImage/CoreImage.h>
 #include <IOKit/IOKitLib.h>
 #include <IOKit/graphics/IOGraphicsLib.h>
 #include <IOSurface/IOSurface.h>
@@ -47,6 +48,11 @@ static std::string NSErrorToString(NSError *error) {
   const char *domain = [error.domain UTF8String];
   return std::string(domain ? domain : "NSError") + ":" +
       std::to_string(error.code) + " " + (description ? description : "");
+}
+
+static bool CaptureMayRetry(NSError* error) {
+  return ![error.domain isEqualToString:SCStreamErrorDomain] ||
+         (error.code != SCStreamErrorUserStopped && error.code != SCStreamErrorUserDeclined);
 }
 
 static void RetainCapturedPixelBuffer(void *owner) {
@@ -121,19 +127,103 @@ static int CopyCapturedPixelBufferToNv12(void *owner, uint8_t *destination,
 // was reported to be broken before macOS 13 - see http://crbug.com/40234870.
 // Also, the `SCContentFilter` fields `contentRect` and `pointPixelScale` were
 // introduced in macOS 14.
+// SCStream may select another virtual display when two displays have the same
+// CoreGraphics unit number. SCScreenshotManager's filtered CGImage path honors
+// the target display and excluded windows in this configuration.
+// macOS has no cancellation API for a pending screenshot. Hold one outstanding
+// request across generations, including when the previous OS callback stalls.
+static std::atomic_flag display_image_busy = ATOMIC_FLAG_INIT;
+typedef void (^DisplayImageOutput)(CVPixelBufferRef, NSError*);
+
+@interface YuDeskDisplayImageCapture : NSObject
+- (instancetype)initWithFilter:(SCContentFilter*)filter configuration:(SCStreamConfiguration*)config
+                         output:(DisplayImageOutput)output;
+- (void)next;
+- (void)cancel;
+@end
+
+@implementation YuDeskDisplayImageCapture {
+  SCContentFilter* _filter;
+  SCStreamConfiguration* _config;
+  DisplayImageOutput _output;
+  CIContext* _context;
+  CVPixelBufferPoolRef _pool;
+  CGColorSpaceRef _color_space;
+  std::atomic_bool _cancelled;
+}
+- (instancetype)initWithFilter:(SCContentFilter*)filter configuration:(SCStreamConfiguration*)config
+                         output:(DisplayImageOutput)output {
+  if ((self = [super init])) {
+    _filter = filter;
+    _config = config;
+    _output = [output copy];
+    _cancelled.store(false);
+    _color_space = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
+    _context = [CIContext contextWithOptions:@{kCIContextCacheIntermediates:@NO}];
+    NSDictionary* attributes = @{
+      (id)kCVPixelBufferPixelFormatTypeKey:@(kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange),
+      (id)kCVPixelBufferWidthKey:@(config.width), (id)kCVPixelBufferHeightKey:@(config.height),
+      (id)kCVPixelBufferIOSurfacePropertiesKey:@{}, (id)kCVPixelBufferMetalCompatibilityKey:@YES
+    };
+    if (!_context || !_color_space || CVPixelBufferPoolCreate(nil, nil, (__bridge CFDictionaryRef)attributes, &_pool)
+                     != kCVReturnSuccess) return nil;
+  }
+  return self;
+}
+- (void)dealloc {
+  if (_pool) CVPixelBufferPoolRelease(_pool);
+  if (_color_space) CGColorSpaceRelease(_color_space);
+}
+- (void)cancel { _cancelled.store(true); }
+- (void)next {
+  if (_cancelled.load()) return;
+  auto queue = dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0);
+  if (display_image_busy.test_and_set()) {
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 30 * NSEC_PER_MSEC), queue, ^{ [self next]; });
+    return;
+  }
+  auto deadline = dispatch_time(DISPATCH_TIME_NOW, CMTimeGetSeconds(_config.minimumFrameInterval)*NSEC_PER_SEC);
+  [SCScreenshotManager captureImageWithFilter:_filter configuration:_config
+                            completionHandler:^(CGImageRef image, NSError* error) {
+    @autoreleasepool {
+      struct ReleaseSlot { ~ReleaseSlot() { display_image_busy.clear(); } } slot;
+      if (self->_cancelled.load()) return;
+      CVPixelBufferRef pixels = nullptr;
+      if (image && !error && CGImageGetWidth(image) == self->_config.width &&
+          CGImageGetHeight(image) == self->_config.height &&
+          CVPixelBufferPoolCreatePixelBuffer(nil, self->_pool, &pixels) == kCVReturnSuccess) {
+        CIImage* input = [CIImage imageWithCGImage:image];
+        CVBufferSetAttachment(pixels, kCVImageBufferYCbCrMatrixKey,
+                              kCVImageBufferYCbCrMatrix_ITU_R_601_4, kCVAttachmentMode_ShouldPropagate);
+        [self->_context render:input toCVPixelBuffer:pixels bounds:input.extent
+                    colorSpace:self->_color_space];
+        self->_output(pixels, nil);
+        CVPixelBufferRelease(pixels);
+      } else {
+        self->_output(nullptr, error ?: [NSError errorWithDomain:@"YuDesk.DisplayImage" code:1 userInfo:nil]);
+        return;
+      }
+      dispatch_after(deadline, dispatch_get_global_queue(QOS_CLASS_USER_INITIATED,0), ^{ [self next]; });
+    }
+  }];
+}
+@end
+
 API_AVAILABLE(macos(14.0))
 @interface SckHelper : NSObject <SCStreamDelegate, SCStreamOutput>
 
 - (instancetype)initWithCapturer:(ScreenCapturerSckImpl *)capturer;
 
 - (void)onShareableContentCreated:(SCShareableContent *)content generation:(uint64_t)generation
-                       revision:(uint64_t)revision;
+                       revision:(uint64_t)revision error:(NSError*)error;
 
 // Called just before the capturer is destroyed. This avoids a dangling pointer,
 // and prevents any new calls into a deleted capturer. If any method-call on the
 // capturer is currently running on a different thread, this blocks until it
 // completes.
 - (void)releaseCapturer;
+- (void)displayImage:(CVPixelBufferRef)pixels generation:(uint64_t)generation revision:(uint64_t)revision
+             complete:(BOOL)complete configuration:(SCStreamConfiguration*)config error:(NSError*)error;
 - (void)privacyCoversChanged:(NSNotification*)notification;
 - (void)scheduleHealthCheck:(uint64_t)session;
 - (void)configurationFinished:(SCStream*)stream generation:(uint64_t)generation
@@ -195,23 +285,27 @@ class API_AVAILABLE(macos(14.0)) ScreenCapturerSckImpl : public ScreenCapturer {
   uint64_t configuration_generation_ = 0;
   bool configuration_in_flight_ = false;
   bool reconfigure_pending_ = false;
+  YuDeskDisplayImageCapture* __strong image_capture_ = nil;
+  Clock::time_point image_frame_time_{};
   SCStreamConfiguration* __strong applied_configuration_ = nil;
 
  public:
   // Called by SckHelper when shareable content is returned by ScreenCaptureKit. `content` will be
   // nil if an error occurred. May run on an arbitrary thread.
   void OnShareableContentCreated(SCShareableContent *content, uint64_t generation,
-                                uint64_t revision);
+                                uint64_t revision, NSError* error);
   void ConfigurationFinished(SCStream* source, uint64_t generation, uint64_t revision,
                              bool complete, SCStreamConfiguration* configuration,
                              NSError* error);
+  void DisplayImage(CVPixelBufferRef pixels, uint64_t generation, uint64_t revision,
+                    bool complete, SCStreamConfiguration* config, NSError* error);
   void RetryPrivacyFilter();
   bool CheckCaptureHealth(uint64_t session);
   void CaptureConfigurationChanged() { StartOrReconfigureCapturer(); }
   void CaptureStopped(SCStream* source, NSError* error);
   void CaptureSuspended(SCStream* source);
   // Called by SckHelper to notify of a newly captured frame. May run on an arbitrary thread.
-  void OnNewCVPixelBuffer(SCStream* source, CVPixelBufferRef pixelBuffer);
+  void OnNewCVPixelBuffer(SCStream* source, CVPixelBufferRef pixelBuffer, uint64_t image_generation = 0);
 
  private:
   // Called when starting the capturer or the configuration has changed (either from a
@@ -468,6 +562,7 @@ int ScreenCapturerSckImpl::Start(bool show_cursor) {
 }
 
 int ScreenCapturerSckImpl::SwitchTo(int monitor_index) {
+  SCStream* previous = nil;
   bool should_reconfigure = false;
   {
     std::lock_guard<std::mutex> lock(lock_);
@@ -478,11 +573,27 @@ int ScreenCapturerSckImpl::SwitchTo(int monitor_index) {
                monitor_index, display_id_map_.size());
       return -1;
     }
+    if (current_monitor_index_ == monitor_index && current_display_ == display_it->second)
+      return 0;
+
+    // A filter update on a live stream can keep the old display's pixels even
+    // after it reports the new dimensions. Bind each output stream to one display.
+    [image_capture_ cancel];
+    image_capture_ = nil;
+    previous = stream_;
+    stream_ = nil;
+    ++configuration_generation_;
+    configuration_in_flight_ = reconfigure_pending_ = false;
+    applied_configuration_ = nil;
+    stream_running_ = received_frame_ = false;
+    suspended_since_ = {};
+    capture_attempt_started_ = Clock::now();
     current_monitor_index_ = monitor_index;
     current_display_ = display_it->second;
     current_stream_id_ = MakeDisplayStreamId(monitor_index);
     should_reconfigure = capture_requested_;
   }
+  [previous stopCaptureWithCompletionHandler:nil];
   if (should_reconfigure) {
     StartOrReconfigureCapturer();
   }
@@ -490,33 +601,7 @@ int ScreenCapturerSckImpl::SwitchTo(int monitor_index) {
 }
 
 int ScreenCapturerSckImpl::ResetToInitialMonitor() {
-  const int target = initial_monitor_index_;
-  bool should_reconfigure = false;
-  {
-    std::lock_guard<std::mutex> lock(lock_);
-    if (display_info_list_.empty()) return -1;
-    auto display_it = display_id_map_.find(target);
-    if (display_it == display_id_map_.end()) {
-      LOG_WARN("ResetToInitialMonitor skipped, invalid monitor_index={}", target);
-      return -1;
-    }
-    const CGDirectDisplayID target_display = display_it->second;
-    if (current_display_ == target_display &&
-        current_monitor_index_ == target) {
-      return 0;
-    }
-    current_monitor_index_ = target;
-    current_display_ = target_display;
-    current_stream_id_ = MakeDisplayStreamId(target);
-    should_reconfigure = capture_requested_ && stream_ != nil;
-  }
-
-  // Resetting session state must not create a capture stream. Preserve the
-  // selected monitor for the next Start(), and only reconfigure an active one.
-  if (should_reconfigure) {
-    StartOrReconfigureCapturer();
-  }
-  return 0;
+  return SwitchTo(initial_monitor_index_);
 }
 
 int ScreenCapturerSckImpl::Destroy() {
@@ -539,6 +624,8 @@ int ScreenCapturerSckImpl::Destroy() {
 int ScreenCapturerSckImpl::Stop() {
   std::lock_guard<std::mutex> lock(lock_);
   capture_requested_ = false;
+  [image_capture_ cancel];
+  image_capture_ = nil;
   stream_running_ = received_frame_ = recovery_pending_ = false;
   recovery_attempt_ = 0;
   suspended_since_ = {};
@@ -557,7 +644,7 @@ int ScreenCapturerSckImpl::Stop() {
 }
 
 void ScreenCapturerSckImpl::OnShareableContentCreated(SCShareableContent *content,
-                                                     uint64_t generation, uint64_t revision) {
+                                                     uint64_t generation, uint64_t revision, NSError* error) {
   {
     std::lock_guard<std::mutex> lock(lock_);
     if (!capture_requested_ || generation != configuration_generation_) {
@@ -567,15 +654,15 @@ void ScreenCapturerSckImpl::OnShareableContentCreated(SCShareableContent *conten
     configuration_in_flight_ = false;
   }
 
+  if (!content) {
+    RecoverCapture(generation, "getShareableContent failed: " + NSErrorToString(error), nil, CaptureMayRetry(error));
+    return;
+  }
+
   // The window list belongs to the privacy revision present when the request
   // was issued. A newer cover must be enumerated by a new request.
   if (GetMacPrivacyCaptureState().revision != revision) {
     StartOrReconfigureCapturer();
-    return;
-  }
-
-  if (!content) {
-    RecoverCapture(generation, "getShareableContent failed");
     return;
   }
 
@@ -606,7 +693,7 @@ void ScreenCapturerSckImpl::OnShareableContentCreated(SCShareableContent *conten
       }
       ++display_index;
     }
-    if (!captured_display) {
+    if (!captured_display && current_display_ == kCGNullDirectDisplay) {
       captured_display = logical_fallback ? logical_fallback
                                           : content.displays.firstObject;
       if (!logical_fallback) logical_index = 0;
@@ -676,7 +763,7 @@ void ScreenCapturerSckImpl::OnShareableContentCreated(SCShareableContent *conten
            excluded.count);
   if (!privacy_filter_complete) {
     bool have_stream;
-    { std::lock_guard lock(lock_); have_stream = stream_ != nil; }
+    { std::lock_guard lock(lock_); have_stream = stream_ != nil || image_capture_ != nil; }
     if (privacy_capture.applied_revision == privacy_capture.revision) {
       if (privacy_) privacy_->Fail("ScreenCaptureKit could not enumerate every privacy cover");
       return; // Preserve the existing exclusion until recovery removes covers.
@@ -721,6 +808,34 @@ void ScreenCapturerSckImpl::OnShareableContentCreated(SCShareableContent *conten
   }
   configuration_in_flight_ = true;
 
+  [image_capture_ cancel];
+  image_capture_ = nil;
+  bool ambiguous_unit = false;
+  for (SCDisplay* other in content.displays) {
+    if (other.displayID != captured_display.displayID &&
+        CGDisplayUnitNumber(other.displayID) == CGDisplayUnitNumber(captured_display.displayID)) {
+      ambiguous_unit = true;
+      break;
+    }
+  }
+  if (ambiguous_unit) {
+    SCStream* previous = stream_;
+    stream_ = nil;
+    SckHelper* helper = helper_;
+    image_capture_ = [[YuDeskDisplayImageCapture alloc] initWithFilter:filter configuration:config
+        output:^(CVPixelBufferRef pixels, NSError* error) {
+          [helper displayImage:pixels generation:generation revision:revision complete:privacy_filter_complete
+                 configuration:config error:error];
+        }];
+    YuDeskDisplayImageCapture* capture = image_capture_;
+    image_frame_time_ = Clock::now();
+    lock.unlock();
+    [previous stopCaptureWithCompletionHandler:nil];
+    if (!capture) { RecoverCapture(generation, "Could not allocate display image capture"); return; }
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{ [capture next]; });
+    return;
+  }
+
   if (stream_) {
     SckHelper* helper = helper_;
     SCStream* source = stream_;
@@ -759,7 +874,7 @@ void ScreenCapturerSckImpl::OnShareableContentCreated(SCShareableContent *conten
     if (!add_stream_output_result) {
       lock.unlock();
       RecoverCapture(generation, "addStreamOutput failed: " +
-                                    NSErrorToString(add_stream_output_error));
+                                    NSErrorToString(add_stream_output_error), nil, CaptureMayRetry(add_stream_output_error));
       return;
     }
 
@@ -772,6 +887,20 @@ void ScreenCapturerSckImpl::OnShareableContentCreated(SCShareableContent *conten
 
     [stream_ startCaptureWithCompletionHandler:handler];
   }
+}
+
+void ScreenCapturerSckImpl::DisplayImage(CVPixelBufferRef pixels, uint64_t generation, uint64_t revision,
+                                        bool complete, SCStreamConfiguration* config, NSError* error) {
+  bool first;
+  {
+    std::lock_guard lock(lock_);
+    if (!capture_requested_ || !image_capture_ || generation != configuration_generation_) return;
+    first = configuration_in_flight_;
+    image_frame_time_ = Clock::now();
+  }
+  if (error) { RecoverCapture(generation, NSErrorToString(error), nil, CaptureMayRetry(error)); return; }
+  if (first) ConfigurationFinished(nil, generation, revision, complete, config, nil);
+  OnNewCVPixelBuffer(nil, pixels, generation);
 }
 
 void ScreenCapturerSckImpl::RetryPrivacyFilter() {
@@ -812,7 +941,7 @@ void ScreenCapturerSckImpl::ConfigurationFinished(SCStream* source, uint64_t gen
   }
   if (error) {
     RecoverCapture(generation, "ScreenCaptureKit configuration failed: " +
-                                  NSErrorToString(error));
+                                  NSErrorToString(error), nil, CaptureMayRetry(error));
     return;
   }
   if (refresh) RetryPrivacyFilter();
@@ -829,6 +958,8 @@ void ScreenCapturerSckImpl::RecoverCapture(uint64_t generation,
     if (!capture_requested_ ||
         (stopped_stream ? stopped_stream != stream_
                         : generation != configuration_generation_)) return;
+    [image_capture_ cancel];
+    image_capture_ = nil;
     old_stream = stream_;
     stream_ = nil;
     stream_running_ = received_frame_ = false;
@@ -878,6 +1009,8 @@ bool ScreenCapturerSckImpl::CheckCaptureHealth(uint64_t session) {
     } else if ((!stream_running_ || !received_frame_) &&
                now - capture_attempt_started_ >= kCaptureStartTimeout) {
       failure = "ScreenCaptureKit did not deliver its first frame";
+    } else if (image_capture_ && now - image_frame_time_ >= kCaptureStartTimeout) {
+      failure = "Display image capture stopped delivering frames";
     } else if (suspended_since_ != Clock::time_point{} &&
                now - suspended_since_ >= kCaptureStartTimeout) {
       failure = "ScreenCaptureKit frame updates remained suspended";
@@ -892,10 +1025,9 @@ void ScreenCapturerSckImpl::CaptureStopped(SCStream* source, NSError* error) {
   if (!source) return;
   // The system's explicit Stop Sharing action cancels capture until the next
   // connection. Only unexpected/system interruptions should restart it.
-  const bool user_stopped = [error.domain isEqualToString:SCStreamErrorDomain] &&
-      error.code == SCStreamErrorUserStopped;
+  const bool retry = CaptureMayRetry(error);
   RecoverCapture(0, "ScreenCaptureKit stream stopped: " + NSErrorToString(error),
-                 source, !user_stopped);
+                 source, retry);
 }
 
 void ScreenCapturerSckImpl::CaptureSuspended(SCStream* source) {
@@ -907,7 +1039,7 @@ void ScreenCapturerSckImpl::CaptureSuspended(SCStream* source) {
 }
 
 void ScreenCapturerSckImpl::OnNewCVPixelBuffer(SCStream* source,
-                                              CVPixelBufferRef pixelBuffer) {
+                                              CVPixelBufferRef pixelBuffer, uint64_t image_generation) {
   if (!pixelBuffer) {
     return;
   }
@@ -937,7 +1069,8 @@ void ScreenCapturerSckImpl::OnNewCVPixelBuffer(SCStream* source,
   bool log_native_output = false;
   {
     std::lock_guard<std::mutex> lock(lock_);
-    if (!_on_data || !capture_requested_ || source != stream_) {
+    if (!_on_data || !capture_requested_ || source != stream_ ||
+        (image_generation && (!image_capture_ || image_generation != configuration_generation_))) {
       return;
     }
     stream_id = ResolveDisplayStreamId(current_stream_id_.c_str(),
@@ -1003,17 +1136,12 @@ void ScreenCapturerSckImpl::StartOrReconfigureCapturer() {
   }
 
   if (!CGPreflightScreenCaptureAccess()) {
-    RecoverCapture(generation, "Screen recording permission not granted");
+    RecoverCapture(generation, "Screen recording permission not granted", nil, false);
     return;
   }
 
   auto handler = ^(SCShareableContent *content, NSError *error) {
-    if (error) {
-      LOG_ERROR("getShareableContent failed: {}", NSErrorToString(error));
-      [local_helper onShareableContentCreated:nil generation:generation revision:revision];
-      return;
-    }
-    [local_helper onShareableContentCreated:content generation:generation revision:revision];
+    [local_helper onShareableContentCreated:error ? nil : content generation:generation revision:revision error:error];
   };
   [SCShareableContent getShareableContentExcludingDesktopWindows:NO
                                            onScreenWindowsOnly:NO
@@ -1042,6 +1170,11 @@ void ScreenCapturerSckImpl::StartOrReconfigureCapturer() {
   return self;
 }
 
+- (void)displayImage:(CVPixelBufferRef)pixels generation:(uint64_t)generation revision:(uint64_t)revision
+             complete:(BOOL)complete configuration:(SCStreamConfiguration*)config error:(NSError*)error {
+  std::lock_guard lock(_capturer_lock);
+  if (_capturer) _capturer->DisplayImage(pixels, generation, revision, complete, config, error);
+}
 - (void)privacyCoversChanged:(NSNotification*)notification {
   std::lock_guard<std::mutex> lock(_capturer_lock);
   if (_capturer) _capturer->CaptureConfigurationChanged();
@@ -1080,11 +1213,11 @@ void ScreenCapturerSckImpl::StartOrReconfigureCapturer() {
   });
 }
 - (void)onShareableContentCreated:(SCShareableContent *)content generation:(uint64_t)generation
-                       revision:(uint64_t)revision {
+                       revision:(uint64_t)revision error:(NSError*)error {
   dispatch_async(_completion_queue, ^{
     std::lock_guard<std::mutex> lock(self->_capturer_lock);
     if (self->_capturer)
-      self->_capturer->OnShareableContentCreated(content, generation, revision);
+      self->_capturer->OnShareableContentCreated(content, generation, revision, error);
   });
 }
 
