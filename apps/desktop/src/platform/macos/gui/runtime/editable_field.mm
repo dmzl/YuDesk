@@ -57,15 +57,22 @@ std::optional<bool> ProbeEditableAt(double x, double y, std::chrono::steady_cloc
     bool editable = false;
     if (matched && std::chrono::steady_clock::now() < deadline) {
       auto role = Attribute(focus, kAXRoleAttribute);
-      auto enabled = Attribute(focus, kAXEnabledAttribute);
-      auto explicit_editable = Attribute(focus, CFSTR("AXEditable"));
+      CFTypeRef enabled = nullptr;
+      auto enabled_status = AXUIElementCopyAttributeValue(focus, kAXEnabledAttribute, &enabled);
+      CFTypeRef explicit_editable = nullptr;
+      auto editable_status = AXUIElementCopyAttributeValue(focus, CFSTR("AXEditable"), &explicit_editable);
       const bool text = role && (CFEqual(role, kAXTextFieldRole) ||
           CFEqual(role, kAXTextAreaRole) || CFEqual(role, kAXComboBoxRole));
       Boolean writable = false;
       if (text && !explicit_editable)
         AXUIElementIsAttributeSettable(focus, kAXValueAttribute, &writable);
-      editable = enabled == kCFBooleanTrue && (explicit_editable == kCFBooleanTrue ||
-                 (text && writable && !explicit_editable));
+      // AppKit NSTextView can omit AXEnabled. Its AXValue is settable only
+      // while editable. An explicit disable or a failed AX request still wins.
+      const bool writable_area = role && CFEqual(role, kAXTextAreaRole) &&
+          enabled_status == kAXErrorAttributeUnsupported &&
+          editable_status == kAXErrorAttributeUnsupported && writable;
+      editable = writable_area || (enabled == kCFBooleanTrue &&
+          (explicit_editable == kCFBooleanTrue || (text && writable && !explicit_editable)));
       if (role) CFRelease(role);
       if (enabled) CFRelease(enabled);
       if (explicit_editable) CFRelease(explicit_editable);
